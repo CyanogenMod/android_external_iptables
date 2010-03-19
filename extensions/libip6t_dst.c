@@ -1,41 +1,31 @@
-/* Shared library add-on to ip6tables to add Hop-by-Hop and Dst headers support. */
+/* Shared library add-on to ip6tables to add Dst header support. */
 #include <stdio.h>
 #include <netdb.h>
 #include <string.h>
 #include <stdlib.h>
 #include <getopt.h>
 #include <errno.h>
-#include <ip6tables.h>
+#include <xtables.h>
 #include <linux/netfilter_ipv6/ip6t_opts.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#ifdef HOPBYHOP
-#define UNAME "HBH"
-#define LNAME "hbh"
-#else
-#define UNAME "DST"
-#define LNAME "dst"
-#endif
-
-/* Function which prints out usage message. */
-static void
-help(void)
+static void dst_help(void)
 {
 	printf(
-UNAME " v%s options:\n"
-" --" LNAME "-len [!] length           total length of this header\n"
-" --" LNAME "-opts TYPE[:LEN][,TYPE[:LEN]...] \n"
-"                               Options and its length (list, max: %d)\n", 
-IPTABLES_VERSION, IP6T_OPTS_OPTSNR);
+"dst match options:\n"
+"[!] --dst-len length            total length of this header\n"
+"  --dst-opts TYPE[:LEN][,TYPE[:LEN]...]\n"
+"                                Options and its length (list, max: %d)\n",
+IP6T_OPTS_OPTSNR);
 }
 
-static struct option opts[] = {
-	{ .name = LNAME "-len",        .has_arg = 1, .flag = 0, .val = '1' },
-	{ .name = LNAME "-opts",       .has_arg = 1, .flag = 0, .val = '2' },
-	{ .name = LNAME "-not-strict", .has_arg = 1, .flag = 0, .val = '3' },
-	{ .name = 0 }
+static const struct option dst_opts[] = {
+	{ .name = "dst-len",        .has_arg = 1, .val = '1' },
+	{ .name = "dst-opts",       .has_arg = 1, .val = '2' },
+	{ .name = "dst-not-strict", .has_arg = 1, .val = '3' },
+	{ .name = NULL }
 };
 
 static u_int32_t
@@ -47,19 +37,19 @@ parse_opts_num(const char *idstr, const char *typestr)
 	id = strtoul(idstr, &ep, 0);
 
 	if ( idstr == ep ) {
-		exit_error(PARAMETER_PROBLEM,
-			   UNAME " no valid digits in %s `%s'", typestr, idstr);
+		xtables_error(PARAMETER_PROBLEM,
+		           "dst: no valid digits in %s `%s'", typestr, idstr);
 	}
 	if ( id == ULONG_MAX  && errno == ERANGE ) {
-		exit_error(PARAMETER_PROBLEM,
+		xtables_error(PARAMETER_PROBLEM,
 			   "%s `%s' specified too big: would overflow",
 			   typestr, idstr);
 	}
 	if ( *idstr != '\0'  && *ep != '\0' ) {
-		exit_error(PARAMETER_PROBLEM,
-			   UNAME " error parsing %s `%s'", typestr, idstr);
+		xtables_error(PARAMETER_PROBLEM,
+		           "dst: error parsing %s `%s'", typestr, idstr);
 	}
-	return (u_int32_t) id;
+	return id;
 }
 
 static int
@@ -70,7 +60,7 @@ parse_options(const char *optsstr, u_int16_t *opts)
 	
 	buffer = strdup(optsstr);
         if (!buffer)
-		exit_error(OTHER_PROBLEM, "strdup failed");
+		xtables_error(OTHER_PROBLEM, "strdup failed");
 			
         for (cp = buffer, i = 0; cp && i < IP6T_OPTS_OPTSNR; cp = next, i++)
         {
@@ -83,18 +73,17 @@ parse_options(const char *optsstr, u_int16_t *opts)
 
                 if (range) {
                         if (i == IP6T_OPTS_OPTSNR-1)
-                                exit_error(PARAMETER_PROBLEM,
+				xtables_error(PARAMETER_PROBLEM,
                                            "too many ports specified");
                         *range++ = '\0';
                 }
 
-                opts[i] = (u_int16_t)((parse_opts_num(cp,"opt") & 0x000000FF)<<8); 
+		opts[i] = (parse_opts_num(cp, "opt") & 0xFF) << 8;
                 if (range) {
 			if (opts[i] == 0)
-        			exit_error(PARAMETER_PROBLEM,
+				xtables_error(PARAMETER_PROBLEM,
 					"PAD0 hasn't got length");
-                        opts[i] |= (u_int16_t)(parse_opts_num(range,"length") &
-					0x000000FF);
+			opts[i] |= parse_opts_num(range, "length") & 0xFF;
                 } else
                         opts[i] |= (0x00FF);
 
@@ -105,7 +94,7 @@ parse_options(const char *optsstr, u_int16_t *opts)
 	}
 
         if (cp)
-		exit_error(PARAMETER_PROBLEM, "too many addresses specified");
+		xtables_error(PARAMETER_PROBLEM, "too many addresses specified");
 
 	free(buffer);
 
@@ -116,9 +105,7 @@ parse_options(const char *optsstr, u_int16_t *opts)
 	return i;
 }
 
-/* Initialize the match. */
-static void
-init(struct ip6t_entry_match *m, unsigned int *nfcache)
+static void dst_init(struct xt_entry_match *m)
 {
 	struct ip6t_opts *optinfo = (struct ip6t_opts *)m->data;
 
@@ -128,23 +115,18 @@ init(struct ip6t_entry_match *m, unsigned int *nfcache)
 	optinfo->optsnr = 0;
 }
 
-/* Function which parses command options; returns true if it
-   ate an option */
-static int
-parse(int c, char **argv, int invert, unsigned int *flags,
-      const struct ip6t_entry *entry,
-      unsigned int *nfcache,
-      struct ip6t_entry_match **match)
+static int dst_parse(int c, char **argv, int invert, unsigned int *flags,
+                     const void *entry, struct xt_entry_match **match)
 {
 	struct ip6t_opts *optinfo = (struct ip6t_opts *)(*match)->data;
 
 	switch (c) {
 	case '1':
 		if (*flags & IP6T_OPTS_LEN)
-			exit_error(PARAMETER_PROBLEM,
-				   "Only one `--" LNAME "-len' allowed");
-		check_inverse(optarg, &invert, &optind, 0);
-		optinfo->hdrlen = parse_opts_num(argv[optind-1], "length");
+			xtables_error(PARAMETER_PROBLEM,
+				   "Only one `--dst-len' allowed");
+		xtables_check_inverse(optarg, &invert, &optind, 0, argv);
+		optinfo->hdrlen = parse_opts_num(optarg, "length");
 		if (invert)
 			optinfo->invflags |= IP6T_OPTS_INV_LEN;
 		optinfo->flags |= IP6T_OPTS_LEN;
@@ -152,24 +134,24 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 		break;
 	case '2':
 		if (*flags & IP6T_OPTS_OPTS)
-			exit_error(PARAMETER_PROBLEM,
-				   "Only one `--" LNAME "-opts' allowed");
-                check_inverse(optarg, &invert, &optind, 0);
+			xtables_error(PARAMETER_PROBLEM,
+				   "Only one `--dst-opts' allowed");
+                xtables_check_inverse(optarg, &invert, &optind, 0, argv);
                 if (invert)
-                        exit_error(PARAMETER_PROBLEM,
-				" '!' not allowed with `--" LNAME "-opts'");
-		optinfo->optsnr = parse_options(argv[optind-1], optinfo->opts);
+			xtables_error(PARAMETER_PROBLEM,
+				" '!' not allowed with `--dst-opts'");
+		optinfo->optsnr = parse_options(optarg, optinfo->opts);
 		optinfo->flags |= IP6T_OPTS_OPTS;
 		*flags |= IP6T_OPTS_OPTS;
 		break;
 	case '3':
 		if (*flags & IP6T_OPTS_NSTRICT)
-			exit_error(PARAMETER_PROBLEM,
-				   "Only one `--" LNAME "-not-strict' allowed");
+			xtables_error(PARAMETER_PROBLEM,
+				   "Only one `--dst-not-strict' allowed");
 		if ( !(*flags & IP6T_OPTS_OPTS) )
-			exit_error(PARAMETER_PROBLEM,
-				   "`--" LNAME "-opts ...' required before `--"
-				   LNAME "-not-strict'");
+			xtables_error(PARAMETER_PROBLEM,
+				   "`--dst-opts ...' required before "
+				   "`--dst-not-strict'");
 		optinfo->flags |= IP6T_OPTS_NSTRICT;
 		*flags |= IP6T_OPTS_NSTRICT;
 		break;
@@ -180,14 +162,8 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 	return 1;
 }
 
-/* Final check; we don't care. */
 static void
-final_check(unsigned int flags)
-{
-}
-
-static void
-print_options(int optsnr, u_int16_t *optsp)
+print_options(unsigned int optsnr, u_int16_t *optsp)
 {
 	unsigned int i;
 
@@ -201,14 +177,12 @@ print_options(int optsnr, u_int16_t *optsp)
 	}
 }
 
-/* Prints out the union ip6t_matchinfo. */
-static void
-print(const struct ip6t_ip6 *ip,
-      const struct ip6t_entry_match *match, int numeric)
+static void dst_print(const void *ip, const struct xt_entry_match *match,
+                      int numeric)
 {
 	const struct ip6t_opts *optinfo = (struct ip6t_opts *)match->data;
 
-	printf(LNAME " ");
+	printf("dst ");
 	if (optinfo->flags & IP6T_OPTS_LEN)
 		printf("length:%s%u ",
 			optinfo->invflags & IP6T_OPTS_INV_LEN ? "!" : "",
@@ -227,43 +201,41 @@ print(const struct ip6t_ip6 *ip,
 		       optinfo->invflags & ~IP6T_OPTS_INV_MASK);
 }
 
-/* Saves the union ip6t_matchinfo in parsable form to stdout. */
-static void save(const struct ip6t_ip6 *ip, const struct ip6t_entry_match *match)
+static void dst_save(const void *ip, const struct xt_entry_match *match)
 {
 	const struct ip6t_opts *optinfo = (struct ip6t_opts *)match->data;
 
 	if (optinfo->flags & IP6T_OPTS_LEN) {
-		printf("--" LNAME "-len %s%u ", 
+		printf("%s--dst-len %u ",
 			(optinfo->invflags & IP6T_OPTS_INV_LEN) ? "! " : "", 
 			optinfo->hdrlen);
 	}
 
 	if (optinfo->flags & IP6T_OPTS_OPTS)
-		printf("--" LNAME "-opts ");
+		printf("--dst-opts ");
 
 	print_options(optinfo->optsnr, (u_int16_t *)optinfo->opts);
 
 	if (optinfo->flags & IP6T_OPTS_NSTRICT)
-		printf("--" LNAME "-not-strict ");
+		printf("--dst-not-strict ");
 }
 
-static
-struct ip6tables_match optstruct = {
-	.name          = LNAME,
-	.version       = IPTABLES_VERSION,
-	.size          = IP6T_ALIGN(sizeof(struct ip6t_opts)),
-	.userspacesize = IP6T_ALIGN(sizeof(struct ip6t_opts)),
-	.help          = &help,
-	.init          = &init,
-	.parse         = &parse,
-	.final_check   = &final_check,
-	.print         = &print,
-	.save          = &save,
-	.extra_opts    = opts
+static struct xtables_match dst_mt6_reg = {
+	.name          = "dst",
+	.version       = XTABLES_VERSION,
+	.family        = NFPROTO_IPV6,
+	.size          = XT_ALIGN(sizeof(struct ip6t_opts)),
+	.userspacesize = XT_ALIGN(sizeof(struct ip6t_opts)),
+	.help          = dst_help,
+	.init          = dst_init,
+	.parse         = dst_parse,
+	.print         = dst_print,
+	.save          = dst_save,
+	.extra_opts    = dst_opts,
 };
 
 void
 _init(void)
 {
-	register_match6(&optstruct);
+	xtables_register_match(&dst_mt6_reg);
 }

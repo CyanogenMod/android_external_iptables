@@ -16,6 +16,8 @@
 #include <stdarg.h>
 #include "iptables.h"
 #include "libiptc/libiptc.h"
+#include "iptables-multi.h"
+#include <xtables.h>
 
 #ifdef DEBUG
 #define DEBUGP(x, args...) fprintf(stderr, x, ## args)
@@ -23,25 +25,17 @@
 #define DEBUGP(x, args...)
 #endif
 
-/* no need to link with iptables.o */
-const char *program_name;
-const char *program_version;
-
 #ifndef IPTABLES_MULTI
 int line = 0;
-void exit_error(enum exittype status, char *msg, ...)
-{
-	va_list args;
-
-	va_start(args, msg);
-	fprintf(stderr, "%s v%s: ", program_name, program_version);
-	vfprintf(stderr, msg, args);
-	va_end(args);
-	fprintf(stderr, "\n");
-	/* On error paths, make sure that we don't leak memory */
-	exit(status);
-}
 #endif
+
+struct xtables_globals iptables_xml_globals = {
+	.option_offset = 0,
+	.program_version = IPTABLES_VERSION,
+	.program_name = "iptables-xml",
+};
+#define prog_name iptables_xml_globals.program_name
+#define prog_vers iptables_xml_globals.program_version
 
 static void print_usage(const char *name, const char *version)
 	    __attribute__ ((noreturn));
@@ -51,10 +45,10 @@ static int verbose = 0;
 static int combine = 0;
 /* Keeping track of external matches and targets.  */
 static struct option options[] = {
-	{"verbose", 0, 0, 'v'},
-	{"combine", 0, 0, 'c'},
-	{"help", 0, 0, 'h'},
-	{0}
+	{"verbose", 0, NULL, 'v'},
+	{"combine", 0, NULL, 'c'},
+	{"help", 0, NULL, 'h'},
+	{ .name = NULL }
 };
 
 static void
@@ -70,41 +64,44 @@ print_usage(const char *name, const char *version)
 static int
 parse_counters(char *string, struct ipt_counters *ctr)
 {
-	if (string != NULL)
+	u_int64_t *pcnt, *bcnt;
+
+	if (string != NULL) {
+		pcnt = &ctr->pcnt;
+		bcnt = &ctr->bcnt;
 		return (sscanf
 			(string, "[%llu:%llu]",
-			 (unsigned long long *) &ctr->pcnt,
-			 (unsigned long long *) &ctr->bcnt) == 2);
-	else
+			 (unsigned long long *)pcnt,
+			 (unsigned long long *)bcnt) == 2);
+	} else
 		return (0 == 2);
 }
 
 /* global new argv and argc */
 static char *newargv[255];
-static int newargc = 0;
+static unsigned int newargc = 0;
 
 static char *oldargv[255];
-static int oldargc = 0;
+static unsigned int oldargc = 0;
 
 /* arg meta data, were they quoted, frinstance */
 static int newargvattr[255];
 
 #define IPT_CHAIN_MAXNAMELEN IPT_TABLE_MAXNAMELEN
-char closeActionTag[IPT_TABLE_MAXNAMELEN + 1];
-char closeRuleTag[IPT_TABLE_MAXNAMELEN + 1];
-char curTable[IPT_TABLE_MAXNAMELEN + 1];
-char curChain[IPT_CHAIN_MAXNAMELEN + 1];
+static char closeActionTag[IPT_TABLE_MAXNAMELEN + 1];
+static char closeRuleTag[IPT_TABLE_MAXNAMELEN + 1];
+static char curTable[IPT_TABLE_MAXNAMELEN + 1];
+static char curChain[IPT_CHAIN_MAXNAMELEN + 1];
 
-typedef struct chain
-{
+struct chain {
 	char *chain;
 	char *policy;
 	struct ipt_counters count;
 	int created;
-} chain;
+};
 
 #define maxChains 10240		/* max chains per table */
-static chain chains[maxChains];
+static struct chain chains[maxChains];
 static int nextChain = 0;
 
 /* funCtion adding one argument to newargv, updating newargc 
@@ -113,7 +110,7 @@ static int
 add_argv(char *what, int quoted)
 {
 	DEBUGP("add_argv: %d %s\n", newargc, what);
-	if (what && ((newargc + 1) < sizeof(newargv) / sizeof(char *))) {
+	if (what && newargc + 1 < ARRAY_SIZE(newargv)) {
 		newargv[newargc] = strdup(what);
 		newargvattr[newargc] = quoted;
 		newargc++;
@@ -125,7 +122,7 @@ add_argv(char *what, int quoted)
 static void
 free_argv(void)
 {
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < newargc; i++) {
 		free(newargv[i]);
@@ -145,7 +142,7 @@ free_argv(void)
 static void
 save_argv(void)
 {
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < oldargc; i++)
 		free(oldargv[i]);
@@ -224,7 +221,7 @@ xmlAttrI(char *name, long long int num)
 }
 
 static void
-closeChain()
+closeChain(void)
 {
 	if (curChain[0] == 0)
 		return;
@@ -299,9 +296,9 @@ static void
 saveChain(char *chain, char *policy, struct ipt_counters *ctr)
 {
 	if (nextChain >= maxChains) {
-		exit_error(PARAMETER_PROBLEM,
+		xtables_error(PARAMETER_PROBLEM,
 			   "%s: line %u chain name invalid\n",
-			   program_name, line);
+			   prog_name, line);
 		exit(1);
 	};
 	chains[nextChain].chain = strdup(chain);
@@ -312,7 +309,7 @@ saveChain(char *chain, char *policy, struct ipt_counters *ctr)
 }
 
 static void
-finishChains()
+finishChains(void)
 {
 	int c;
 
@@ -327,7 +324,7 @@ finishChains()
 }
 
 static void
-closeTable()
+closeTable(void)
 {
 	closeChain();
 	finishChains();
@@ -357,6 +354,18 @@ isTarget(char *arg)
 		&& (strcmp((arg), "-j") == 0 || strcmp((arg), "--jump") == 0
 		    || strcmp((arg), "-g") == 0
 		    || strcmp((arg), "--goto") == 0));
+}
+
+// is it a terminating target like -j ACCEPT, etc
+// (or I guess -j SNAT in nat table, but we don't check for that yet
+static int
+isTerminatingTarget(char *arg)
+{
+	return ((arg)
+		&& (strcmp((arg), "ACCEPT") == 0
+		    || strcmp((arg), "DROP") == 0
+		    || strcmp((arg), "QUEUE") == 0
+		    || strcmp((arg), "RETURN") == 0));
 }
 
 // part=-1 means do conditions, part=1 means do rules, part=0 means do both
@@ -515,12 +524,10 @@ do_rule_part(char *leveltag1, char *leveltag2, int part, int argc,
 	if (level1)
 		printf("%s", leveli1);
 	CLOSE_LEVEL(1);
-
-	return;
 }
 
 static int
-compareRules()
+compareRules(void)
 {
 	/* compare arguments up to -j or -g for match.
 	   NOTE: We don't want to combine actions if there were no criteria 
@@ -529,14 +536,26 @@ compareRules()
 	   is the case when processing the ACTUAL output of actual iptables-save 
 	   rather than a file merely in a compatable format */
 
-	int old = 0;
-	int new = 0;
+	unsigned int old = 0;
+	unsigned int new = 0;
 
 	int compare = 0;
 
 	while (new < newargc && old < oldargc) {
 		if (isTarget(oldargv[old]) && isTarget(newargv[new])) {
-			compare = 1;
+			/* if oldarg was a terminating action then it makes no sense
+			 * to combine further actions into the same xml */
+			if (((strcmp((oldargv[old]), "-j") == 0 
+					|| strcmp((oldargv[old]), "--jump") == 0) 
+				&& old+1 < oldargc
+				&& isTerminatingTarget(oldargv[old+1]) )
+			    || strcmp((oldargv[old]), "-g") == 0 
+			    || strcmp((oldargv[old]), "--goto") == 0 ) {
+				/* Previous rule had terminating action */	
+				compare = 0;
+			} else {
+				compare = 1;
+			}
 			break;
 		}
 		// break when old!=new
@@ -603,7 +622,6 @@ do_rule(char *pcnt, char *bcnt, int argc, char *argv[], int argvattr[])
 	do_rule_part(NULL, NULL, 1, argc, argv, argvattr);
 }
 
-
 #ifdef IPTABLES_MULTI
 int
 iptables_xml_main(int argc, char *argv[])
@@ -616,10 +634,9 @@ main(int argc, char *argv[])
 	int c;
 	FILE *in;
 
-	program_name = "iptables-xml";
-	program_version = IPTABLES_VERSION;
 	line = 0;
 
+	xtables_set_params(&iptables_xml_globals);
 	while ((c = getopt_long(argc, argv, "cvh", options, NULL)) != -1) {
 		switch (c) {
 		case 'c':
@@ -680,9 +697,9 @@ main(int argc, char *argv[])
 			table = strtok(buffer + 1, " \t\n");
 			DEBUGP("line %u, table '%s'\n", line, table);
 			if (!table) {
-				exit_error(PARAMETER_PROBLEM,
+				xtables_error(PARAMETER_PROBLEM,
 					   "%s: line %u table name invalid\n",
-					   program_name, line);
+					   prog_name, line);
 				exit(1);
 			}
 			openTable(table);
@@ -697,9 +714,9 @@ main(int argc, char *argv[])
 			chain = strtok(buffer + 1, " \t\n");
 			DEBUGP("line %u, chain '%s'\n", line, chain);
 			if (!chain) {
-				exit_error(PARAMETER_PROBLEM,
+				xtables_error(PARAMETER_PROBLEM,
 					   "%s: line %u chain name invalid\n",
-					   program_name, line);
+					   prog_name, line);
 				exit(1);
 			}
 
@@ -708,9 +725,9 @@ main(int argc, char *argv[])
 			policy = strtok(NULL, " \t\n");
 			DEBUGP("line %u, policy '%s'\n", line, policy);
 			if (!policy) {
-				exit_error(PARAMETER_PROBLEM,
+				xtables_error(PARAMETER_PROBLEM,
 					   "%s: line %u policy invalid\n",
-					   program_name, line);
+					   prog_name, line);
 				exit(1);
 			}
 
@@ -720,7 +737,7 @@ main(int argc, char *argv[])
 
 			ret = 1;
 		} else if (curTable[0]) {
-			int a;
+			unsigned int a;
 			char *ptr = buffer;
 			char *pcnt = NULL;
 			char *bcnt = NULL;
@@ -738,19 +755,19 @@ main(int argc, char *argv[])
 				/* we have counters in our input */
 				ptr = strchr(buffer, ']');
 				if (!ptr)
-					exit_error(PARAMETER_PROBLEM,
+					xtables_error(PARAMETER_PROBLEM,
 						   "Bad line %u: need ]\n",
 						   line);
 
 				pcnt = strtok(buffer + 1, ":");
 				if (!pcnt)
-					exit_error(PARAMETER_PROBLEM,
+					xtables_error(PARAMETER_PROBLEM,
 						   "Bad line %u: need :\n",
 						   line);
 
 				bcnt = strtok(NULL, "]");
 				if (!bcnt)
-					exit_error(PARAMETER_PROBLEM,
+					xtables_error(PARAMETER_PROBLEM,
 						   "Bad line %u: need ]\n",
 						   line);
 
@@ -810,7 +827,7 @@ main(int argc, char *argv[])
 					if (!strncmp(param_buffer, "-t", 3)
 					    || !strncmp(param_buffer,
 							"--table", 8)) {
-						exit_error(PARAMETER_PROBLEM,
+						xtables_error(PARAMETER_PROBLEM,
 							   "Line %u seems to have a "
 							   "-t table option.\n",
 							   line);
@@ -843,16 +860,18 @@ main(int argc, char *argv[])
 		}
 		if (!ret) {
 			fprintf(stderr, "%s: line %u failed\n",
-				program_name, line);
+				prog_name, line);
 			exit(1);
 		}
 	}
 	if (curTable[0]) {
 		fprintf(stderr, "%s: COMMIT expected at line %u\n",
-			program_name, line + 1);
+			prog_name, line + 1);
 		exit(1);
 	}
 
+	if (in != NULL)
+		fclose(in);
 	printf("</iptables-rules>\n");
 	free_argv();
 

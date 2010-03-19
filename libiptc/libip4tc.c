@@ -17,7 +17,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <netinet/in.h>
 
 #ifdef DEBUG_CONNTRACK
 #define inline
@@ -48,7 +47,7 @@
 #define STRUCT_REPLACE		struct ipt_replace
 
 #define STRUCT_TC_HANDLE	struct iptc_handle
-#define TC_HANDLE_T		iptc_handle_t
+#define xtc_handle		iptc_handle
 
 #define ENTRY_ITERATE		IPT_ENTRY_ITERATE
 #define TABLE_MAXNAMELEN	IPT_TABLE_MAXNAMELEN
@@ -75,7 +74,6 @@
 #define TC_APPEND_ENTRY		iptc_append_entry
 #define TC_DELETE_ENTRY		iptc_delete_entry
 #define TC_DELETE_NUM_ENTRY	iptc_delete_num_entry
-#define TC_CHECK_PACKET		iptc_check_packet
 #define TC_FLUSH_ENTRIES	iptc_flush_entries
 #define TC_ZERO_ENTRIES		iptc_zero_entries
 #define TC_READ_COUNTER		iptc_read_counter
@@ -122,8 +120,8 @@
 
 #define IP_PARTS(n) IP_PARTS_NATIVE(ntohl(n))
 
-int
-dump_entry(STRUCT_ENTRY *e, const TC_HANDLE_T handle)
+static int
+dump_entry(struct ipt_entry *e, struct iptc_handle *const handle)
 {
 	size_t i;
 	STRUCT_ENTRY_TARGET *t;
@@ -145,17 +143,15 @@ dump_entry(STRUCT_ENTRY *e, const TC_HANDLE_T handle)
 	printf("Invflags: %02X\n", e->ip.invflags);
 	printf("Counters: %llu packets, %llu bytes\n",
 	       (unsigned long long)e->counters.pcnt, (unsigned long long)e->counters.bcnt);
-	printf("Cache: %08X ", e->nfcache);
-	if (e->nfcache & NFC_ALTERED) printf("ALTERED ");
-	if (e->nfcache & NFC_UNKNOWN) printf("UNKNOWN ");
-	printf("\n");
+	printf("Cache: %08X\n", e->nfcache);
 
 	IPT_MATCH_ITERATE(e, print_match);
 
 	t = GET_TARGET(e);
 	printf("Target name: `%s' [%u]\n", t->u.user.name, t->u.target_size);
 	if (strcmp(t->u.user.name, STANDARD_TARGET) == 0) {
-		int pos = *(int *)t->data;
+		const unsigned char *data = t->data;
+		int pos = *(const int *)data;
 		if (pos < 0)
 			printf("verdict=%s\n",
 			       pos == -NF_ACCEPT-1 ? "NF_ACCEPT"
@@ -201,8 +197,7 @@ is_same(const STRUCT_ENTRY *a, const STRUCT_ENTRY *b, unsigned char *matchmask)
 			return NULL;
 	}
 
-	if (a->nfcache != b->nfcache
-	    || a->target_offset != b->target_offset
+	if (a->target_offset != b->target_offset
 	    || a->next_offset != b->next_offset)
 		return NULL;
 
@@ -241,7 +236,7 @@ check_match(const STRUCT_ENTRY_MATCH *m, unsigned int *off)
 static inline int
 check_entry(const STRUCT_ENTRY *e, unsigned int *i, unsigned int *off,
 	    unsigned int user_offset, int *was_return,
-	    TC_HANDLE_T h)
+	    struct iptc_handle *h)
 {
 	unsigned int toff;
 	STRUCT_STANDARD_TARGET *t;
@@ -317,7 +312,7 @@ check_entry(const STRUCT_ENTRY *e, unsigned int *i, unsigned int *off,
 #ifdef IPTC_DEBUG
 /* Do every conceivable sanity check on the handle */
 static void
-do_check(TC_HANDLE_T h, unsigned int line)
+do_check(struct iptc_handle *h, unsigned int line)
 {
 	unsigned int i, n;
 	unsigned int user_offset; /* Offset of first user chain */

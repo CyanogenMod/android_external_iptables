@@ -11,23 +11,20 @@
 #else
 #include <linux/if_ether.h>
 #endif
-#include <iptables.h>
+#include <xtables.h>
 #include <linux/netfilter_ipv4/ipt_realm.h>
 
-/* Function which prints out usage message. */
-static void
-help(void)
+static void realm_help(void)
 {
 	printf(
-"realm v%s options:\n"
-" --realm [!] value[/mask]\n"
-"				Match realm\n"
-"\n", IPTABLES_VERSION);
+"realm match options:\n"
+"[!] --realm value[/mask]\n"
+"				Match realm\n");
 }
 
-static struct option opts[] = {
-	{ "realm", 1, 0, '1' },
-	{0}
+static const struct option realm_opts[] = {
+	{ "realm", 1, NULL, '1' },
+	{ .name = NULL }
 };
 
 struct realmname { 
@@ -38,12 +35,11 @@ struct realmname {
 };
 
 /* array of realms from /etc/iproute2/rt_realms */
-static struct realmname *realms = NULL;
+static struct realmname *realms;
 /* 1 if loading failed */
-static int rdberr = 0;
+static int rdberr;
 
-
-void load_realms()
+static void load_realms(void)
 {
 	const char* rfnm = "/etc/iproute2/rt_realms";
 	char buf[512];
@@ -89,14 +85,14 @@ void load_realms()
 			continue;
 
 		/* found valid data */
-		newnm = (struct realmname*)malloc(sizeof(struct realmname));
+		newnm = malloc(sizeof(struct realmname));
 		if (newnm == NULL) {
 			perror("libipt_realm: malloc failed");
 			exit(1);
 		}
 		newnm->id = id;
 		newnm->len = nxt - cur;
-		newnm->name = (char*)malloc(newnm->len + 1);
+		newnm->name = malloc(newnm->len + 1);
 		if (newnm->name == NULL) {
 			perror("libipt_realm: malloc failed");
 			exit(1);
@@ -116,7 +112,7 @@ void load_realms()
 }
 
 /* get realm id for name, -1 if error/not found */
-int realm_name2id(const char* name)
+static int realm_name2id(const char* name)
 {
 	struct realmname* cur;
 
@@ -134,7 +130,7 @@ int realm_name2id(const char* name)
 }
 
 /* get realm name for id, NULL if error/not found */
-const char* realm_id2name(int id)
+static const char *realm_id2name(int id)
 {
 	struct realmname* cur;
 
@@ -151,14 +147,8 @@ const char* realm_id2name(int id)
 	return NULL;
 }
 
-
-/* Function which parses command options; returns true if it
-   ate an option */
-static int
-parse(int c, char **argv, int invert, unsigned int *flags,
-      const struct ipt_entry *entry,
-      unsigned int *nfcache,
-      struct ipt_entry_match **match)
+static int realm_parse(int c, char **argv, int invert, unsigned int *flags,
+                       const void *entry, struct xt_entry_match **match)
 {
 	struct ipt_realm_info *realminfo = (struct ipt_realm_info *)(*match)->data;
 	int id;
@@ -166,8 +156,8 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 	switch (c) {
 		char *end;
 	case '1':
-		check_inverse(argv[optind-1], &invert, &optind, 0);
-		end = optarg = argv[optind-1];
+		xtables_check_inverse(optarg, &invert, &optind, 0, argv);
+		end = optarg = optarg;
 		realminfo->id = strtoul(optarg, &end, 0);
 		if (end != optarg && (*end == '/' || *end == '\0')) {
 			if (*end == '/')
@@ -175,14 +165,14 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 			else
 				realminfo->mask = 0xffffffff;
 			if (*end != '\0' || end == optarg)
-				exit_error(PARAMETER_PROBLEM,
+				xtables_error(PARAMETER_PROBLEM,
 					   "Bad realm value `%s'", optarg);
 		} else {
 			id = realm_name2id(optarg);
 			if (id == -1)
-				exit_error(PARAMETER_PROBLEM,
+				xtables_error(PARAMETER_PROBLEM,
 					   "Realm `%s' not found", optarg);
-			realminfo->id = (u_int32_t)id;
+			realminfo->id = id;
 			realminfo->mask = 0xffffffff;
 		}
 		if (invert)
@@ -213,13 +203,10 @@ print_realm(unsigned long id, unsigned long mask, int numeric)
 	}
 }
 
-/* Prints out the matchinfo. */
-static void
-print(const struct ipt_ip *ip,
-      const struct ipt_entry_match *match,
-      int numeric)
+static void realm_print(const void *ip, const struct xt_entry_match *match,
+                        int numeric)
 {
-	struct ipt_realm_info *ri = (struct ipt_realm_info *) match->data;
+	const struct ipt_realm_info *ri = (const void *)match->data;
 
 	if (ri->invert)
 		printf("! ");
@@ -228,12 +215,9 @@ print(const struct ipt_ip *ip,
 	print_realm(ri->id, ri->mask, numeric);
 }
 
-
-/* Saves the union ipt_matchinfo in parsable form to stdout. */
-static void
-save(const struct ipt_ip *ip, const struct ipt_entry_match *match)
+static void realm_save(const void *ip, const struct xt_entry_match *match)
 {
-	struct ipt_realm_info *ri = (struct ipt_realm_info *) match->data;
+	const struct ipt_realm_info *ri = (const void *)match->data;
 
 	if (ri->invert)
 		printf("! ");
@@ -242,31 +226,28 @@ save(const struct ipt_ip *ip, const struct ipt_entry_match *match)
 	print_realm(ri->id, ri->mask, 0);
 }
 
-/* Final check; must have specified --mark. */
-static void
-final_check(unsigned int flags)
+static void realm_check(unsigned int flags)
 {
 	if (!flags)
-		exit_error(PARAMETER_PROBLEM,
+		xtables_error(PARAMETER_PROBLEM,
 			   "realm match: You must specify `--realm'");
 }
 
-static struct iptables_match realm = { NULL,
+static struct xtables_match realm_mt_reg = {
 	.name		= "realm",
-	.version	= IPTABLES_VERSION,
-	.size		= IPT_ALIGN(sizeof(struct ipt_realm_info)),
-	.userspacesize	= IPT_ALIGN(sizeof(struct ipt_realm_info)),
-	.help		= &help,
-	.parse		= &parse,
-	.final_check	= &final_check,
-	.print		= &print,
-	.save		= &save,
-	.extra_opts	= opts
+	.version	= XTABLES_VERSION,
+	.family		= NFPROTO_IPV4,
+	.size		= XT_ALIGN(sizeof(struct ipt_realm_info)),
+	.userspacesize	= XT_ALIGN(sizeof(struct ipt_realm_info)),
+	.help		= realm_help,
+	.parse		= realm_parse,
+	.final_check	= realm_check,
+	.print		= realm_print,
+	.save		= realm_save,
+	.extra_opts	= realm_opts,
 };
 
-void ipt_realm_init(void)
+void libipt_realm_init(void)
 {
-	register_match(&realm);
+	xtables_register_match(&realm_mt_reg);
 }
-
-

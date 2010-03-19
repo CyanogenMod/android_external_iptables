@@ -5,32 +5,29 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <errno.h>
-#include <ip6tables.h>
+#include <xtables.h>
 #include <linux/netfilter_ipv6/ip6t_frag.h>
-                                        
-/* Function which prints out usage message. */
-static void
-help(void)
+
+static void frag_help(void)
 {
 	printf(
-"FRAG v%s options:\n"
-" --fragid [!] id[:id]          match the id (range)\n"
-" --fraglen [!] length          total length of this header\n"
+"frag match options:\n"
+"[!] --fragid id[:id]           match the id (range)\n"
+"[!] --fraglen length           total length of this header\n"
 " --fragres                     check the reserved filed, too\n"
 " --fragfirst                   matches on the first fragment\n"
 " [--fragmore|--fraglast]       there are more fragments or this\n"
-"                               is the last one\n",
-IPTABLES_VERSION);
+"                               is the last one\n");
 }
 
-static struct option opts[] = {
-	{ .name = "fragid",    .has_arg = 1, .flag = 0, .val = '1' },
-	{ .name = "fraglen",   .has_arg = 1, .flag = 0, .val = '2' },
-	{ .name = "fragres",   .has_arg = 0, .flag = 0, .val = '3' },
-	{ .name = "fragfirst", .has_arg = 0, .flag = 0, .val = '4' },
-	{ .name = "fragmore",  .has_arg = 0, .flag = 0, .val = '5' },
-	{ .name = "fraglast",  .has_arg = 0, .flag = 0, .val = '6' },
-	{ .name = 0 }
+static const struct option frag_opts[] = {
+	{ .name = "fragid",    .has_arg = 1, .val = '1' },
+	{ .name = "fraglen",   .has_arg = 1, .val = '2' },
+	{ .name = "fragres",   .has_arg = 0, .val = '3' },
+	{ .name = "fragfirst", .has_arg = 0, .val = '4' },
+	{ .name = "fragmore",  .has_arg = 0, .val = '5' },
+	{ .name = "fraglast",  .has_arg = 0, .val = '6' },
+	{ .name = NULL }
 };
 
 static u_int32_t
@@ -42,19 +39,19 @@ parse_frag_id(const char *idstr, const char *typestr)
 	id = strtoul(idstr, &ep, 0);
 
 	if ( idstr == ep ) {
-		exit_error(PARAMETER_PROBLEM,
+		xtables_error(PARAMETER_PROBLEM,
 			   "FRAG no valid digits in %s `%s'", typestr, idstr);
 	}
 	if ( id == ULONG_MAX  && errno == ERANGE ) {
-		exit_error(PARAMETER_PROBLEM,
+		xtables_error(PARAMETER_PROBLEM,
 			   "%s `%s' specified too big: would overflow",
 			   typestr, idstr);
 	}	
 	if ( *idstr != '\0'  && *ep != '\0' ) {
-		exit_error(PARAMETER_PROBLEM,
+		xtables_error(PARAMETER_PROBLEM,
 			   "FRAG error parsing %s `%s'", typestr, idstr);
 	}
-	return (u_int32_t) id;
+	return id;
 }
 
 static void
@@ -76,9 +73,7 @@ parse_frag_ids(const char *idstring, u_int32_t *ids)
 	free(buffer);
 }
 
-/* Initialize the match. */
-static void
-init(struct ip6t_entry_match *m, unsigned int *nfcache)
+static void frag_init(struct xt_entry_match *m)
 {
 	struct ip6t_frag *fraginfo = (struct ip6t_frag *)m->data;
 
@@ -89,23 +84,18 @@ init(struct ip6t_entry_match *m, unsigned int *nfcache)
 	fraginfo->invflags = 0;
 }
 
-/* Function which parses command options; returns true if it
-   ate an option */
-static int
-parse(int c, char **argv, int invert, unsigned int *flags,
-      const struct ip6t_entry *entry,
-      unsigned int *nfcache,
-      struct ip6t_entry_match **match)
+static int frag_parse(int c, char **argv, int invert, unsigned int *flags,
+                      const void *entry, struct xt_entry_match **match)
 {
 	struct ip6t_frag *fraginfo = (struct ip6t_frag *)(*match)->data;
 
 	switch (c) {
 	case '1':
 		if (*flags & IP6T_FRAG_IDS)
-			exit_error(PARAMETER_PROBLEM,
+			xtables_error(PARAMETER_PROBLEM,
 				   "Only one `--fragid' allowed");
-		check_inverse(optarg, &invert, &optind, 0);
-		parse_frag_ids(argv[optind-1], fraginfo->ids);
+		xtables_check_inverse(optarg, &invert, &optind, 0, argv);
+		parse_frag_ids(optarg, fraginfo->ids);
 		if (invert)
 			fraginfo->invflags |= IP6T_FRAG_INV_IDS;
 		fraginfo->flags |= IP6T_FRAG_IDS;
@@ -113,10 +103,10 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 		break;
 	case '2':
 		if (*flags & IP6T_FRAG_LEN)
-			exit_error(PARAMETER_PROBLEM,
+			xtables_error(PARAMETER_PROBLEM,
 				   "Only one `--fraglen' allowed");
-		check_inverse(optarg, &invert, &optind, 0);
-		fraginfo->hdrlen = parse_frag_id(argv[optind-1], "length");
+		xtables_check_inverse(optarg, &invert, &optind, 0, argv);
+		fraginfo->hdrlen = parse_frag_id(optarg, "length");
 		if (invert)
 			fraginfo->invflags |= IP6T_FRAG_INV_LEN;
 		fraginfo->flags |= IP6T_FRAG_LEN;
@@ -124,28 +114,28 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 		break;
 	case '3':
 		if (*flags & IP6T_FRAG_RES)
-			exit_error(PARAMETER_PROBLEM,
+			xtables_error(PARAMETER_PROBLEM,
 				   "Only one `--fragres' allowed");
 		fraginfo->flags |= IP6T_FRAG_RES;
 		*flags |= IP6T_FRAG_RES;
 		break;
 	case '4':
 		if (*flags & IP6T_FRAG_FST)
-			exit_error(PARAMETER_PROBLEM,
+			xtables_error(PARAMETER_PROBLEM,
 				   "Only one `--fragfirst' allowed");
 		fraginfo->flags |= IP6T_FRAG_FST;
 		*flags |= IP6T_FRAG_FST;
 		break;
 	case '5':
 		if (*flags & (IP6T_FRAG_MF|IP6T_FRAG_NMF)) 
-			exit_error(PARAMETER_PROBLEM,
+			xtables_error(PARAMETER_PROBLEM,
 			   "Only one `--fragmore' or `--fraglast' allowed");
 		fraginfo->flags |= IP6T_FRAG_MF;
 		*flags |= IP6T_FRAG_MF;
 		break;
 	case '6':
 		if (*flags & (IP6T_FRAG_MF|IP6T_FRAG_NMF)) 
-			exit_error(PARAMETER_PROBLEM,
+			xtables_error(PARAMETER_PROBLEM,
 			   "Only one `--fragmore' or `--fraglast' allowed");
 		fraginfo->flags |= IP6T_FRAG_NMF;
 		*flags |= IP6T_FRAG_NMF;
@@ -155,12 +145,6 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 	}
 
 	return 1;
-}
-
-/* Final check; we don't care. */
-static void
-final_check(unsigned int flags)
-{
 }
 
 static void
@@ -178,10 +162,8 @@ print_ids(const char *name, u_int32_t min, u_int32_t max,
 	}
 }
 
-/* Prints out the union ip6t_matchinfo. */
-static void
-print(const struct ip6t_ip6 *ip,
-      const struct ip6t_entry_match *match, int numeric)
+static void frag_print(const void *ip, const struct xt_entry_match *match,
+                       int numeric)
 {
 	const struct ip6t_frag *frag = (struct ip6t_frag *)match->data;
 
@@ -212,14 +194,13 @@ print(const struct ip6t_ip6 *ip,
 		       frag->invflags & ~IP6T_FRAG_INV_MASK);
 }
 
-/* Saves the union ip6t_matchinfo in parsable form to stdout. */
-static void save(const struct ip6t_ip6 *ip, const struct ip6t_entry_match *match)
+static void frag_save(const void *ip, const struct xt_entry_match *match)
 {
 	const struct ip6t_frag *fraginfo = (struct ip6t_frag *)match->data;
 
 	if (!(fraginfo->ids[0] == 0
 	    && fraginfo->ids[1] == 0xFFFFFFFF)) {
-		printf("--fragid %s", 
+		printf("%s--fragid ", 
 			(fraginfo->invflags & IP6T_FRAG_INV_IDS) ? "! " : "");
 		if (fraginfo->ids[0]
 		    != fraginfo->ids[1])
@@ -232,7 +213,7 @@ static void save(const struct ip6t_ip6 *ip, const struct ip6t_entry_match *match
 	}
 
 	if (fraginfo->flags & IP6T_FRAG_LEN) {
-		printf("--fraglen %s%u ", 
+		printf("%s--fraglen %u ", 
 			(fraginfo->invflags & IP6T_FRAG_INV_LEN) ? "! " : "", 
 			fraginfo->hdrlen);
 	}
@@ -250,23 +231,22 @@ static void save(const struct ip6t_ip6 *ip, const struct ip6t_entry_match *match
 		printf("--fraglast ");
 }
 
-static
-struct ip6tables_match frag = {
+static struct xtables_match frag_mt6_reg = {
 	.name          = "frag",
-	.version       = IPTABLES_VERSION,
-	.size          = IP6T_ALIGN(sizeof(struct ip6t_frag)),
-	.userspacesize = IP6T_ALIGN(sizeof(struct ip6t_frag)),
-	.help          = &help,
-	.init          = &init,
-	.parse         = &parse,
-	.final_check   = &final_check,
-	.print         = &print,
-	.save          = &save,
-	.extra_opts    = opts
+	.version       = XTABLES_VERSION,
+	.family        = NFPROTO_IPV6,
+	.size          = XT_ALIGN(sizeof(struct ip6t_frag)),
+	.userspacesize = XT_ALIGN(sizeof(struct ip6t_frag)),
+	.help          = frag_help,
+	.init          = frag_init,
+	.parse         = frag_parse,
+	.print         = frag_print,
+	.save          = frag_save,
+	.extra_opts    = frag_opts,
 };
 
 void
 _init(void)
 {
-	register_match6(&frag);
+	xtables_register_match(&frag_mt6_reg);
 }

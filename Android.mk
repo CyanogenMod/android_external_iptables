@@ -45,17 +45,17 @@ LOCAL_C_INCLUDES:= \
 	$(intermediates)/extensions/
 
 LOCAL_CFLAGS:=-DNO_SHARED_LIBS
-LOCAL_CFLAGS+=-D_INIT=$*_init
-LOCAL_CFLAGS+=-DIPTABLES_VERSION=\"1.3.7\"
+LOCAL_CFLAGS+=-DXTABLES_INTERNAL
+LOCAL_CFLAGS+=-DIPTABLES_VERSION=\"1.4.7\"
 
-PF_EXT_SLIB:=ah addrtype comment 2connmark conntrack 2dscp 2ecn esp 
-PF_EXT_SLIB+=hashlimit helper icmp iprange length limit mac multiport #2mark
-PF_EXT_SLIB+=owner physdev pkttype policy realm sctp standard state tcp 
-PF_EXT_SLIB+=2tcpmss 2tos 2ttl udp unclean CLASSIFY CONNMARK DNAT LOG #DSCP ECN
-PF_EXT_SLIB+=MASQUERADE MIRROR NETMAP NFQUEUE NOTRACK REDIRECT REJECT #MARK
+PF_EXT_SLIB:=ah addrtype ecn icmp realm ttl unclean DNAT LOG #DSCP ECN
+PF_EXT_SLIB+=MASQUERADE MIRROR NETMAP REDIRECT REJECT #MARK
 PF_EXT_SLIB+=SAME SNAT ULOG # TOS TCPMSS TTL
 
+XT_SLIB:=comment connmark conntrack dscp esp hashlimit helper iprange length limit mac multiport owner physdev pkttype policy standard state tcp udp tcpmss tos CLASSIFY CONNMARK NFQUEUE NOTRACK
+
 EXT_FUNC+=$(foreach T,$(PF_EXT_SLIB),ipt_$(T))
+EXT_FUNC+=$(foreach T,$(XT_SLIB),xt_$(T))
 
 # generated headers
 
@@ -72,6 +72,7 @@ LOCAL_GENERATED_SOURCES:= $(GEN_INITEXT)
 
 LOCAL_SRC_FILES:= \
 	$(foreach T,$(PF_EXT_SLIB),extensions/libipt_$(T).c) \
+	$(foreach T,$(XT_SLIB),extensions/libxt_$(T).c) \
 	extensions/initext.c
 
 LOCAL_STATIC_LIBRARIES := \
@@ -90,11 +91,12 @@ LOCAL_C_INCLUDES:= \
 	$(KERNEL_HEADERS)
 
 LOCAL_CFLAGS:=-DNO_SHARED_LIBS
-LOCAL_CFLAGS+=-DIPTABLES_VERSION=\"1.3.7\" # -DIPT_LIB_DIR=\"$(IPT_LIBDIR)\"
-#LOCAL_CFLAGS+=-DIPT_LIB_DIR=\"$(IPT_LIBDIR)\"
+LOCAL_CFLAGS+=-DIPTABLES_VERSION=\"1.4.7\" -DXTABLES_LIBDIR=\"/system/lib\" -DXTABLES_INTERNAL
 
 LOCAL_SRC_FILES:= \
 	iptables.c \
+	xshared.c \
+	xtables.c \
 	iptables-standalone.c 
 
 LOCAL_MODULE_TAGS:=

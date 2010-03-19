@@ -19,10 +19,9 @@
 .\"
 .\"
 .SH NAME
-iptables-restore \- Restore IP Tables
+iptables-restore \(em Restore IP Tables
 .SH SYNOPSIS
-.BR "iptables-restore " "[-c] [-n]"
-.br
+\fBiptables\-restore\fP [\fB\-c\fP] [\fB\-n\fP]
 .SH DESCRIPTION
 .PP
 .B iptables-restore
@@ -33,7 +32,6 @@ I/O redirection provided by your shell to read from a file
 restore the values of all packet and byte counters
 .TP
 \fB\-n\fR, \fB\-\-noflush\fR 
-.TP
 don't flush the previous contents of the table. If not specified, 
 .B iptables-restore
 flushes (deletes) all previous contents of the respective IP Table.
@@ -42,7 +40,7 @@ None known as of iptables-1.2.1 release
 .SH AUTHOR
 Harald Welte <laforge@gnumonks.org>
 .SH SEE ALSO
-.BR iptables-save "(8), " iptables "(8) "
+\fBiptables\-save\fP(8), \fBiptables\fP(8)
 .PP
 The iptables-HOWTO, which details more iptables usage, the NAT-HOWTO,
 which details NAT, and the netfilter-hacking-HOWTO which details the

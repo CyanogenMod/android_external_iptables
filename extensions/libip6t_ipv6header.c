@@ -5,7 +5,7 @@ on whether they contain certain headers */
  * Rewritten by: Andras Kis-Szabo <kisza@sch.bme.hu> */
 
 #include <getopt.h>
-#include <ip6tables.h>
+#include <xtables.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,7 +13,6 @@ on whether they contain certain headers */
 #include <netdb.h>
 #include <sys/types.h>
 
-#include <linux/netfilter_ipv6/ip6_tables.h>
 #include <linux/netfilter_ipv6/ip6t_ipv6header.h>
 
 /* This maybe required 
@@ -78,7 +77,7 @@ proto_to_name(u_int8_t proto, int nolookup)
                         return pent->p_name;
         }
 
-        for (i = 0; i < sizeof(chain_protos)/sizeof(struct pprot); i++)
+        for (i = 0; i < ARRAY_SIZE(chain_protos); ++i)
                 if (chain_protos[i].num == proto)
                         return chain_protos[i].name;
 
@@ -95,67 +94,58 @@ name_to_proto(const char *s)
         	proto = pent->p_proto;
         else {
         	unsigned int i;
-        	for (i = 0;
-        		i < sizeof(chain_protos)/sizeof(struct pprot);
-        		i++) {
+        	for (i = 0; i < ARRAY_SIZE(chain_protos); ++i)
         		if (strcmp(s, chain_protos[i].name) == 0) {
         			proto = chain_protos[i].num;
         			break;
         		}
-        	}
 
-        	if (i == sizeof(chain_protos)/sizeof(struct pprot))
-        		exit_error(PARAMETER_PROBLEM,
+		if (i == ARRAY_SIZE(chain_protos))
+			xtables_error(PARAMETER_PROBLEM,
         			"unknown header `%s' specified",
         			s);
         }
 
-        return (u_int16_t)proto;
+        return proto;
 }
 
 static unsigned int 
 add_proto_to_mask(int proto){
 	unsigned int i=0, flag=0;
 
-	for (i = 0;
-		i < sizeof(chain_flags)/sizeof(struct numflag);
-		i++) {
+	for (i = 0; i < ARRAY_SIZE(chain_flags); ++i)
 			if (proto == chain_flags[i].proto){
 				flag = chain_flags[i].flag;
 				break;
 			}
-	}
 
-	if (i == sizeof(chain_flags)/sizeof(struct numflag))
-		exit_error(PARAMETER_PROBLEM,
+	if (i == ARRAY_SIZE(chain_flags))
+		xtables_error(PARAMETER_PROBLEM,
 		"unknown header `%d' specified",
 		proto);
 	
 	return flag;
 }	
 
-static void
-help(void)
+static void ipv6header_help(void)
 {
 	printf(
-"ipv6header v%s match options:\n"
-"--header [!] headers     Type of header to match, by name\n"
+"ipv6header match options:\n"
+"[!] --header headers     Type of header to match, by name\n"
 "                         names: hop,dst,route,frag,auth,esp,none,proto\n"
 "                    long names: hop-by-hop,ipv6-opts,ipv6-route,\n"
 "                                ipv6-frag,ah,esp,ipv6-nonxt,protocol\n"
 "                       numbers: 0,60,43,44,51,50,59\n"
-"--soft                    The header CONTAINS the specified extensions\n",
-	IPTABLES_VERSION);
+"--soft                    The header CONTAINS the specified extensions\n");
 }
 
-static struct option opts[] = {
-	{ "header", 1, 0, '1' },
-	{ "soft", 0, 0, '2' },
-	{ 0 }
+static const struct option ipv6header_opts[] = {
+	{ "header", 1, NULL, '1' },
+	{ "soft", 0, NULL, '2' },
+	{ .name = NULL }
 };
 
-static void
-init(struct ip6t_entry_match *m, unsigned int *nfcache)
+static void ipv6header_init(struct xt_entry_match *m)
 {
 	struct ip6t_ipv6header_info *info = (struct ip6t_ipv6header_info *)m->data;
 
@@ -182,12 +172,9 @@ parse_header(const char *flags) {
 #define IPV6_HDR_HEADER	0x01
 #define IPV6_HDR_SOFT	0x02
 
-/* Parses command options; returns 0 if it ate an option */
 static int
-parse(int c, char **argv, int invert, unsigned int *flags,
-      const struct ip6t_entry *entry,
-      unsigned int *nfcache,
-      struct ip6t_entry_match **match)
+ipv6header_parse(int c, char **argv, int invert, unsigned int *flags,
+                 const void *entry, struct xt_entry_match **match)
 {
 	struct ip6t_ipv6header_info *info = (struct ip6t_ipv6header_info *)(*match)->data;
 
@@ -195,13 +182,13 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 		case '1' : 
 			/* Parse the provided header names */
 			if (*flags & IPV6_HDR_HEADER)
-				exit_error(PARAMETER_PROBLEM,
+				xtables_error(PARAMETER_PROBLEM,
 					"Only one `--header' allowed");
 
-			check_inverse(optarg, &invert, &optind, 0);
+			xtables_check_inverse(optarg, &invert, &optind, 0, argv);
 
-			if (! (info->matchflags = parse_header(argv[optind-1])) )
-				exit_error(PARAMETER_PROBLEM, "ip6t_ipv6header: cannot parse header names");
+			if (! (info->matchflags = parse_header(optarg)) )
+				xtables_error(PARAMETER_PROBLEM, "ip6t_ipv6header: cannot parse header names");
 
 			if (invert) 
 				info->invflags |= 0xFF;
@@ -210,7 +197,7 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 		case '2' : 
 			/* Soft-mode requested? */
 			if (*flags & IPV6_HDR_SOFT)
-				exit_error(PARAMETER_PROBLEM,
+				xtables_error(PARAMETER_PROBLEM,
 					"Only one `--soft' allowed");
 
 			info->modeflag |= 0xFF;
@@ -223,11 +210,9 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 	return 1;
 }
 
-/* Checks the flags variable */
-static void
-final_check(unsigned int flags)
+static void ipv6header_check(unsigned int flags)
 {
-	if (!flags) exit_error(PARAMETER_PROBLEM, "ip6t_ipv6header: no options specified");
+	if (!flags) xtables_error(PARAMETER_PROBLEM, "ip6t_ipv6header: no options specified");
 }
 
 static void
@@ -252,11 +237,8 @@ print_header(u_int8_t flags){
                 printf("NONE");
 }
 
-/* Prints out the match */
-static void
-print(const struct ip6t_ip6 *ip,
-      const struct ip6t_entry_match *match,
-      int numeric)
+static void ipv6header_print(const void *ip,
+                             const struct xt_entry_match *match, int numeric)
 {
 	const struct ip6t_ipv6header_info *info = (const struct ip6t_ipv6header_info *)match->data;
 	printf("ipv6header ");
@@ -273,44 +255,36 @@ print(const struct ip6t_ip6 *ip,
 
 	if (info->modeflag)
 		printf("soft ");
-
-	return;
 }
 
-/* Saves the match */
-static void
-save(const struct ip6t_ip6 *ip,
-     const struct ip6t_entry_match *match)
+static void ipv6header_save(const void *ip, const struct xt_entry_match *match)
 {
 
 	const struct ip6t_ipv6header_info *info = (const struct ip6t_ipv6header_info *)match->data;
 
-	printf("--header ");
-	printf("%s", info->invflags ? "!" : "");
+	printf("%s--header ", info->invflags ? "! " : "");
 	print_header(info->matchflags);
 	printf(" ");
 	if (info->modeflag)
 		printf("--soft ");
-
-	return;
 }
 
-static
-struct ip6tables_match ipv6header = {
+static struct xtables_match ipv6header_mt6_reg = {
 	.name		= "ipv6header",
-	.version	= IPTABLES_VERSION,
-	.size		= IP6T_ALIGN(sizeof(struct ip6t_ipv6header_info)),
-	.userspacesize	= IP6T_ALIGN(sizeof(struct ip6t_ipv6header_info)),
-	.help		= &help,
-	.init		= &init,
-	.parse		= &parse,
-	.final_check	= &final_check,
-	.print		= &print,
-	.save		= &save,
-	.extra_opts	= opts,
+	.version	= XTABLES_VERSION,
+	.family		= NFPROTO_IPV6,
+	.size		= XT_ALIGN(sizeof(struct ip6t_ipv6header_info)),
+	.userspacesize	= XT_ALIGN(sizeof(struct ip6t_ipv6header_info)),
+	.help		= ipv6header_help,
+	.init		= ipv6header_init,
+	.parse		= ipv6header_parse,
+	.final_check	= ipv6header_check,
+	.print		= ipv6header_print,
+	.save		= ipv6header_save,
+	.extra_opts	= ipv6header_opts,
 };
 
 void _init(void)
 {
-	register_match6(&ipv6header);
+	xtables_register_match(&ipv6header_mt6_reg);
 }

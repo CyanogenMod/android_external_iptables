@@ -6,27 +6,21 @@
  *
  * libipt_ECN.c borrowed heavily from libipt_DSCP.c
  *
- * $Id: libipt_ECN.c 3507 2004-12-28 13:11:59Z /C=DE/ST=Berlin/L=Berlin/O=Netfilter Project/OU=Development/CN=rusty/emailAddress=rusty@netfilter.org $
+ * $Id$
  */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <getopt.h>
 
-#include <iptables.h>
-#include <linux/netfilter_ipv4/ip_tables.h>
+#include <xtables.h>
 #include <linux/netfilter_ipv4/ipt_ECN.h>
 
-static void init(struct ipt_entry_target *t, unsigned int *nfcache) 
-{
-}
-
-static void help(void) 
+static void ECN_help(void)
 {
 	printf(
-"ECN target v%s options\n"
-"  --ecn-tcp-remove		Remove all ECN bits from TCP header\n",
-		IPTABLES_VERSION);
+"ECN target options\n"
+"  --ecn-tcp-remove		Remove all ECN bits from TCP header\n");
 }
 
 #if 0
@@ -37,18 +31,16 @@ static void help(void)
 #endif
 
 
-static struct option opts[] = {
-	{ "ecn-tcp-remove", 0, 0, 'F' },
-	{ "ecn-tcp-cwr", 1, 0, 'G' },
-	{ "ecn-tcp-ece", 1, 0, 'H' },
-	{ "ecn-ip-ect", 1, 0, '9' },
-	{ 0 }
+static const struct option ECN_opts[] = {
+	{ "ecn-tcp-remove", 0, NULL, 'F' },
+	{ "ecn-tcp-cwr", 1, NULL, 'G' },
+	{ "ecn-tcp-ece", 1, NULL, 'H' },
+	{ "ecn-ip-ect", 1, NULL, '9' },
+	{ .name = NULL }
 };
 
-static int
-parse(int c, char **argv, int invert, unsigned int *flags,
-      const struct ipt_entry *entry,
-      struct ipt_entry_target **target)
+static int ECN_parse(int c, char **argv, int invert, unsigned int *flags,
+                     const void *entry, struct xt_entry_target **target)
 {
 	unsigned int result;
 	struct ipt_ECN_info *einfo
@@ -57,7 +49,7 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 	switch (c) {
 	case 'F':
 		if (*flags)
-			exit_error(PARAMETER_PROBLEM,
+			xtables_error(PARAMETER_PROBLEM,
 			        "ECN target: Only use --ecn-tcp-remove ONCE!");
 		einfo->operation = IPT_ECN_OP_SET_ECE | IPT_ECN_OP_SET_CWR;
 		einfo->proto.tcp.ece = 0;
@@ -66,10 +58,10 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 		break;
 	case 'G':
 		if (*flags & IPT_ECN_OP_SET_CWR)
-			exit_error(PARAMETER_PROBLEM,
+			xtables_error(PARAMETER_PROBLEM,
 				"ECN target: Only use --ecn-tcp-cwr ONCE!");
-		if (string_to_number(optarg, 0, 1, &result))
-			exit_error(PARAMETER_PROBLEM,
+		if (!xtables_strtoui(optarg, NULL, &result, 0, 1))
+			xtables_error(PARAMETER_PROBLEM,
 				   "ECN target: Value out of range");
 		einfo->operation |= IPT_ECN_OP_SET_CWR;
 		einfo->proto.tcp.cwr = result;
@@ -77,10 +69,10 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 		break;
 	case 'H':
 		if (*flags & IPT_ECN_OP_SET_ECE)
-			exit_error(PARAMETER_PROBLEM,
+			xtables_error(PARAMETER_PROBLEM,
 				"ECN target: Only use --ecn-tcp-ece ONCE!");
-		if (string_to_number(optarg, 0, 1, &result))
-			exit_error(PARAMETER_PROBLEM,
+		if (!xtables_strtoui(optarg, NULL, &result, 0, 1))
+			xtables_error(PARAMETER_PROBLEM,
 				   "ECN target: Value out of range");
 		einfo->operation |= IPT_ECN_OP_SET_ECE;
 		einfo->proto.tcp.ece = result;
@@ -88,10 +80,10 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 		break;
 	case '9':
 		if (*flags & IPT_ECN_OP_SET_IP)
-			exit_error(PARAMETER_PROBLEM,
+			xtables_error(PARAMETER_PROBLEM,
 				"ECN target: Only use --ecn-ip-ect ONCE!");
-		if (string_to_number(optarg, 0, 3, &result))
-			exit_error(PARAMETER_PROBLEM,
+		if (!xtables_strtoui(optarg, NULL, &result, 0, 3))
+			xtables_error(PARAMETER_PROBLEM,
 				   "ECN target: Value out of range");
 		einfo->operation |= IPT_ECN_OP_SET_IP;
 		einfo->ip_ect = result;
@@ -104,19 +96,15 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 	return 1;
 }
 
-static void
-final_check(unsigned int flags)
+static void ECN_check(unsigned int flags)
 {
 	if (!flags)
-		exit_error(PARAMETER_PROBLEM,
+		xtables_error(PARAMETER_PROBLEM,
 		           "ECN target: Parameter --ecn-tcp-remove is required");
 }
 
-/* Prints out the targinfo. */
-static void
-print(const struct ipt_ip *ip,
-      const struct ipt_entry_target *target,
-      int numeric)
+static void ECN_print(const void *ip, const struct xt_entry_target *target,
+                      int numeric)
 {
 	const struct ipt_ECN_info *einfo =
 		(const struct ipt_ECN_info *)target->data;
@@ -139,9 +127,7 @@ print(const struct ipt_ip *ip,
 	}
 }
 
-/* Saves the union ipt_targinfo in parsable form to stdout. */
-static void
-save(const struct ipt_ip *ip, const struct ipt_entry_target *target)
+static void ECN_save(const void *ip, const struct xt_entry_target *target)
 {
 	const struct ipt_ECN_info *einfo =
 		(const struct ipt_ECN_info *)target->data;
@@ -163,23 +149,21 @@ save(const struct ipt_ip *ip, const struct ipt_entry_target *target)
 	}
 }
 
-static
-struct iptables_target ecn = { 
-	.next		= NULL,
+static struct xtables_target ecn_tg_reg = {
 	.name		= "ECN",
-	.version	= IPTABLES_VERSION,
-	.size		= IPT_ALIGN(sizeof(struct ipt_ECN_info)),
-	.userspacesize	= IPT_ALIGN(sizeof(struct ipt_ECN_info)),
-	.help		= &help,
-	.init		= &init,
-	.parse		= &parse,
-	.final_check	= &final_check,
-	.print		= &print,
-	.save		= &save,
-	.extra_opts	= opts
+	.version	= XTABLES_VERSION,
+	.family		= NFPROTO_IPV4,
+	.size		= XT_ALIGN(sizeof(struct ipt_ECN_info)),
+	.userspacesize	= XT_ALIGN(sizeof(struct ipt_ECN_info)),
+	.help		= ECN_help,
+	.parse		= ECN_parse,
+	.final_check	= ECN_check,
+	.print		= ECN_print,
+	.save		= ECN_save,
+	.extra_opts	= ECN_opts,
 };
 
-void ipt_ECN_init(void)
+void libipt_ECN_init(void)
 {
-	register_target(&ecn);
+	xtables_register_target(&ecn_tg_reg);
 }

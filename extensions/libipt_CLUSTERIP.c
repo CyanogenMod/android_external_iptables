@@ -15,15 +15,13 @@
 #include <linux/if_ether.h>
 #endif
 
-#include <iptables.h>
-#include <linux/netfilter_ipv4/ip_tables.h>
-#include "../include/linux/netfilter_ipv4/ipt_CLUSTERIP.h"
+#include <xtables.h>
+#include <linux/netfilter_ipv4/ipt_CLUSTERIP.h>
 
-static void
-help(void)
+static void CLUSTERIP_help(void)
 {
 	printf(
-"CLUSTERIP target v%s options:\n"
+"CLUSTERIP target options:\n"
 "  --new			 Create a new ClusterIP\n"
 "  --hashmode <mode>		 Specify hashing mode\n"
 "					sourceip\n"
@@ -32,9 +30,7 @@ help(void)
 "  --clustermac <mac>		 Set clusterIP MAC address\n"
 "  --total-nodes <num>		 Set number of total nodes in cluster\n"
 "  --local-node <num>		 Set the local node number\n"
-"  --hash-init <num>		 Set init value of the Jenkins hash\n"
-"\n",
-IPTABLES_VERSION);
+"  --hash-init <num>		 Set init value of the Jenkins hash\n");
 }
 
 #define	PARAM_NEW	0x0001
@@ -44,20 +40,15 @@ IPTABLES_VERSION);
 #define PARAM_LOCALNODE	0x0010
 #define PARAM_HASHINIT	0x0020
 
-static struct option opts[] = {
-	{ "new", 0, 0, '1' },
-	{ "hashmode", 1, 0, '2' },
-	{ "clustermac", 1, 0, '3' },
-	{ "total-nodes", 1, 0, '4' },
-	{ "local-node", 1, 0, '5' },
-	{ "hash-init", 1, 0, '6' },
-	{ 0 }
+static const struct option CLUSTERIP_opts[] = {
+	{ "new", 0, NULL, '1' },
+	{ "hashmode", 1, NULL, '2' },
+	{ "clustermac", 1, NULL, '3' },
+	{ "total-nodes", 1, NULL, '4' },
+	{ "local-node", 1, NULL, '5' },
+	{ "hash-init", 1, NULL, '6' },
+	{ .name = NULL }
 };
-
-static void
-init(struct ipt_entry_target *t, unsigned int *nfcache)
-{
-}
 
 static void
 parse_mac(const char *mac, char *macbuf)
@@ -65,7 +56,7 @@ parse_mac(const char *mac, char *macbuf)
 	unsigned int i = 0;
 
 	if (strlen(mac) != ETH_ALEN*3-1)
-		exit_error(PARAMETER_PROBLEM, "Bad mac address `%s'", mac);
+		xtables_error(PARAMETER_PROBLEM, "Bad mac address \"%s\"", mac);
 
 	for (i = 0; i < ETH_ALEN; i++) {
 		long number;
@@ -78,15 +69,13 @@ parse_mac(const char *mac, char *macbuf)
 		    && number <= 255)
 			macbuf[i] = number;
 		else
-			exit_error(PARAMETER_PROBLEM,
+			xtables_error(PARAMETER_PROBLEM,
 				   "Bad mac address `%s'", mac);
 	}
 }
 
-static int
-parse(int c, char **argv, int invert, unsigned int *flags,
-      const struct ipt_entry *entry,
-      struct ipt_entry_target **target)
+static int CLUSTERIP_parse(int c, char **argv, int invert, unsigned int *flags,
+                           const void *entry, struct xt_entry_target **target)
 {
 	struct ipt_clusterip_tgt_info *cipinfo
 		= (struct ipt_clusterip_tgt_info *)(*target)->data;
@@ -96,14 +85,14 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 	case '1':
 		cipinfo->flags |= CLUSTERIP_FLAG_NEW;
 		if (*flags & PARAM_NEW)
-			exit_error(PARAMETER_PROBLEM, "Can only specify `--new' once\n");
+			xtables_error(PARAMETER_PROBLEM, "Can only specify \"--new\" once\n");
 		*flags |= PARAM_NEW;
 		break;
 	case '2':
 		if (!(*flags & PARAM_NEW))
-			exit_error(PARAMETER_PROBLEM, "Can only specify hashmode combined with `--new'\n");
+			xtables_error(PARAMETER_PROBLEM, "Can only specify hashmode combined with \"--new\"\n");
 		if (*flags & PARAM_HMODE)
-			exit_error(PARAMETER_PROBLEM, "Can only specify hashmode once\n");
+			xtables_error(PARAMETER_PROBLEM, "Can only specify hashmode once\n");
 		if (!strcmp(optarg, "sourceip"))
 			cipinfo->hash_mode = CLUSTERIP_HASHMODE_SIP;
 		else if (!strcmp(optarg, "sourceip-sourceport"))
@@ -111,48 +100,48 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 		else if (!strcmp(optarg, "sourceip-sourceport-destport"))
 			cipinfo->hash_mode = CLUSTERIP_HASHMODE_SIP_SPT_DPT;
 		else
-			exit_error(PARAMETER_PROBLEM, "Unknown hashmode `%s'\n",
+			xtables_error(PARAMETER_PROBLEM, "Unknown hashmode \"%s\"\n",
 				   optarg);
 		*flags |= PARAM_HMODE;
 		break;
 	case '3':
 		if (!(*flags & PARAM_NEW))
-			exit_error(PARAMETER_PROBLEM, "Can only specify MAC combined with `--new'\n");
+			xtables_error(PARAMETER_PROBLEM, "Can only specify MAC combined with \"--new\"\n");
 		if (*flags & PARAM_MAC)
-			exit_error(PARAMETER_PROBLEM, "Can only specify MAC once\n");
+			xtables_error(PARAMETER_PROBLEM, "Can only specify MAC once\n");
 		parse_mac(optarg, (char *)cipinfo->clustermac);
 		if (!(cipinfo->clustermac[0] & 0x01))
-			exit_error(PARAMETER_PROBLEM, "MAC has to be a multicast ethernet address\n");
+			xtables_error(PARAMETER_PROBLEM, "MAC has to be a multicast ethernet address\n");
 		*flags |= PARAM_MAC;
 		break;
 	case '4':
 		if (!(*flags & PARAM_NEW))
-			exit_error(PARAMETER_PROBLEM, "Can only specify node number combined with `--new'\n");
+			xtables_error(PARAMETER_PROBLEM, "Can only specify node number combined with \"--new\"\n");
 		if (*flags & PARAM_TOTALNODE)
-			exit_error(PARAMETER_PROBLEM, "Can only specify total node number once\n");
-		if (string_to_number(optarg, 1, CLUSTERIP_MAX_NODES, &num) < 0)
-			exit_error(PARAMETER_PROBLEM, "Unable to parse `%s'\n", optarg);
-		cipinfo->num_total_nodes = (u_int16_t)num;
+			xtables_error(PARAMETER_PROBLEM, "Can only specify total node number once\n");
+		if (!xtables_strtoui(optarg, NULL, &num, 1, CLUSTERIP_MAX_NODES))
+			xtables_error(PARAMETER_PROBLEM, "Unable to parse \"%s\"\n", optarg);
+		cipinfo->num_total_nodes = num;
 		*flags |= PARAM_TOTALNODE;
 		break;
 	case '5':
 		if (!(*flags & PARAM_NEW))
-			exit_error(PARAMETER_PROBLEM, "Can only specify node number combined with `--new'\n");
+			xtables_error(PARAMETER_PROBLEM, "Can only specify node number combined with \"--new\"\n");
 		if (*flags & PARAM_LOCALNODE)
-			exit_error(PARAMETER_PROBLEM, "Can only specify local node number once\n");
-		if (string_to_number(optarg, 1, CLUSTERIP_MAX_NODES, &num) < 0)
-			exit_error(PARAMETER_PROBLEM, "Unable to parse `%s'\n", optarg);
+			xtables_error(PARAMETER_PROBLEM, "Can only specify local node number once\n");
+		if (!xtables_strtoui(optarg, NULL, &num, 1, CLUSTERIP_MAX_NODES))
+			xtables_error(PARAMETER_PROBLEM, "Unable to parse \"%s\"\n", optarg);
 		cipinfo->num_local_nodes = 1;
-		cipinfo->local_nodes[0] = (u_int16_t)num;
+		cipinfo->local_nodes[0] = num;
 		*flags |= PARAM_LOCALNODE;
 		break;
 	case '6':
 		if (!(*flags & PARAM_NEW))
-			exit_error(PARAMETER_PROBLEM, "Can only specify hash init value combined with `--new'\n");
+			xtables_error(PARAMETER_PROBLEM, "Can only specify hash init value combined with \"--new\"\n");
 		if (*flags & PARAM_HASHINIT)
-			exit_error(PARAMETER_PROBLEM, "Can specify hash init value only once\n");
-		if (string_to_number(optarg, 0, UINT_MAX, &num) < 0)
-			exit_error(PARAMETER_PROBLEM, "Unable to parse `%s'\n", optarg);
+			xtables_error(PARAMETER_PROBLEM, "Can specify hash init value only once\n");
+		if (!xtables_strtoui(optarg, NULL, &num, 0, UINT_MAX))
+			xtables_error(PARAMETER_PROBLEM, "Unable to parse \"%s\"\n", optarg);
 		cipinfo->hash_initval = num;
 		*flags |= PARAM_HASHINIT;
 		break;
@@ -163,8 +152,7 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 	return 1;
 }
 
-static void
-final_check(unsigned int flags)
+static void CLUSTERIP_check(unsigned int flags)
 {
 	if (flags == 0)
 		return;
@@ -173,7 +161,7 @@ final_check(unsigned int flags)
 		== (PARAM_NEW|PARAM_HMODE|PARAM_MAC|PARAM_TOTALNODE|PARAM_LOCALNODE))
 		return;
 
-	exit_error(PARAMETER_PROBLEM, "CLUSTERIP target: Invalid parameter combination\n");
+	xtables_error(PARAMETER_PROBLEM, "CLUSTERIP target: Invalid parameter combination\n");
 }
 
 static char *hashmode2str(enum clusterip_hashmode mode)
@@ -203,13 +191,9 @@ static char *mac2str(const u_int8_t mac[ETH_ALEN])
 		mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 	return buf;
 }
-			
 
-/* Prints out the targinfo. */
-static void
-print(const struct ipt_ip *ip,
-      const struct ipt_entry_target *target,
-      int numeric)
+static void CLUSTERIP_print(const void *ip,
+                            const struct xt_entry_target *target, int numeric)
 {
 	const struct ipt_clusterip_tgt_info *cipinfo =
 		(const struct ipt_clusterip_tgt_info *)target->data;
@@ -227,9 +211,7 @@ print(const struct ipt_ip *ip,
 		cipinfo->hash_initval);
 }
 
-/* Saves the union ipt_targinfo in parsable form to stdout. */
-static void
-save(const struct ipt_ip *ip, const struct ipt_entry_target *target)
+static void CLUSTERIP_save(const void *ip, const struct xt_entry_target *target)
 {
 	const struct ipt_clusterip_tgt_info *cipinfo =
 		(const struct ipt_clusterip_tgt_info *)target->data;
@@ -247,22 +229,21 @@ save(const struct ipt_ip *ip, const struct ipt_entry_target *target)
 	       cipinfo->hash_initval);
 }
 
-static struct iptables_target clusterip = { 
-	.next		= NULL,
+static struct xtables_target clusterip_tg_reg = {
 	.name		= "CLUSTERIP",
-	.version	= IPTABLES_VERSION,
-	.size		= IPT_ALIGN(sizeof(struct ipt_clusterip_tgt_info)),
+	.version	= XTABLES_VERSION,
+	.family		= NFPROTO_IPV4,
+	.size		= XT_ALIGN(sizeof(struct ipt_clusterip_tgt_info)),
 	.userspacesize	= offsetof(struct ipt_clusterip_tgt_info, config),
- 	.help		= &help,
-	.init		= &init,
-	.parse		= &parse,
-	.final_check	= &final_check,
-	.print		= &print,
-	.save		= &save,
-	.extra_opts	= opts
+ 	.help		= CLUSTERIP_help,
+	.parse		= CLUSTERIP_parse,
+	.final_check	= CLUSTERIP_check,
+	.print		= CLUSTERIP_print,
+	.save		= CLUSTERIP_save,
+	.extra_opts	= CLUSTERIP_opts,
 };
 
-void ipt_CLUSTERIP_init(void)
+void libipt_CLUSTERIP_init(void)
 {
-	register_target(&clusterip);
+	xtables_register_target(&clusterip_tg_reg);
 }

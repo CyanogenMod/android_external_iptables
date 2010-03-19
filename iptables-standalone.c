@@ -36,6 +36,7 @@
 #include <errno.h>
 #include <string.h>
 #include <iptables.h>
+#include "iptables-multi.h"
 
 #ifdef IPTABLES_MULTI
 int
@@ -47,26 +48,35 @@ main(int argc, char *argv[])
 {
 	int ret;
 	char *table = "filter";
-	iptc_handle_t handle = NULL;
+	struct iptc_handle *handle = NULL;
 
-	program_name = "iptables";
-	program_version = IPTABLES_VERSION;
-
-	lib_dir = getenv("IPTABLES_LIB_DIR");
-	if (!lib_dir)
-		lib_dir = IPT_LIB_DIR;
-
-#ifdef NO_SHARED_LIBS
+	iptables_globals.program_name = "iptables";
+	ret = xtables_init_all(&iptables_globals, NFPROTO_IPV4);
+	if (ret < 0) {
+		fprintf(stderr, "%s/%s Failed to initialize xtables\n",
+				iptables_globals.program_name,
+				iptables_globals.program_version);
+				exit(1);
+	}
+#if defined(ALL_INCLUSIVE) || defined(NO_SHARED_LIBS)
 	init_extensions();
 #endif
 
 	ret = do_command(argc, argv, &table, &handle);
-	if (ret)
-		ret = iptc_commit(&handle);
+	if (ret) {
+		ret = iptc_commit(handle);
+		iptc_free(handle);
+	}
 
 	if (!ret) {
-		fprintf(stderr, "iptables: %s\n",
-			iptc_strerror(errno));
+		if (errno == EINVAL) {
+			fprintf(stderr, "iptables: %s. "
+					"Run `dmesg' for more information.\n",
+				iptc_strerror(errno));
+		} else {
+			fprintf(stderr, "iptables: %s.\n",
+				iptc_strerror(errno));
+		}
 		if (errno == EAGAIN) {
 			exit(RESOURCE_PROBLEM);
 		}

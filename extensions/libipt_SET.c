@@ -16,33 +16,28 @@
 #include <getopt.h>
 #include <ctype.h>
 
-#include <iptables.h>
-#include <linux/netfilter_ipv4/ip_tables.h>
-#include <linux/netfilter_ipv4/ip_nat_rule.h>
+#include <xtables.h>
 #include <linux/netfilter_ipv4/ip_set.h>
 #include <linux/netfilter_ipv4/ipt_set.h>
 #include "libipt_set.h"
 
-/* Function which prints out usage message. */
-static void help(void)
+static void SET_help(void)
 {
-	printf("SET v%s options:\n"
+	printf("SET target options:\n"
 	       " --add-set name flags\n"
 	       " --del-set name flags\n"
 	       "		add/del src/dst IP/port from/to named sets,\n"
 	       "		where flags are the comma separated list of\n"
-	       "		'src' and 'dst'.\n"
-	       "\n", IPTABLES_VERSION);
+	       "		'src' and 'dst' specifications.\n");
 }
 
-static struct option opts[] = {
-	{"add-set",   1, 0, '1'},
-	{"del-set",   1, 0, '2'},
-	{0}
+static const struct option SET_opts[] = {
+	{ .name = "add-set", .has_arg = true, .val = '1'},
+	{ .name = "del-set", .has_arg = true, .val = '2'},
+	{ .name = NULL }
 };
 
-/* Initialize the target. */
-static void init(struct ipt_entry_target *target, unsigned int *nfcache)
+static void SET_init(struct xt_entry_target *target)
 {
 	struct ipt_set_info_target *info =
 	    (struct ipt_set_info_target *) target->data;
@@ -58,35 +53,32 @@ parse_target(char **argv, int invert, unsigned int *flags,
              struct ipt_set_info *info, const char *what)
 {
 	if (info->flags[0])
-		exit_error(PARAMETER_PROBLEM,
+		xtables_error(PARAMETER_PROBLEM,
 			   "--%s can be specified only once", what);
 
-	if (check_inverse(optarg, &invert, NULL, 0))
-		exit_error(PARAMETER_PROBLEM,
+	if (xtables_check_inverse(optarg, &invert, NULL, 0, argv))
+		xtables_error(PARAMETER_PROBLEM,
 			   "Unexpected `!' after --%s", what);
 
 	if (!argv[optind]
 	    || argv[optind][0] == '-' || argv[optind][0] == '!')
-		exit_error(PARAMETER_PROBLEM,
+		xtables_error(PARAMETER_PROBLEM,
 			   "--%s requires two args.", what);
 
-	if (strlen(argv[optind-1]) > IP_SET_MAXNAMELEN - 1)
-		exit_error(PARAMETER_PROBLEM,
+	if (strlen(optarg) > IP_SET_MAXNAMELEN - 1)
+		xtables_error(PARAMETER_PROBLEM,
 			   "setname `%s' too long, max %d characters.",
-			   argv[optind-1], IP_SET_MAXNAMELEN - 1);
+			   optarg, IP_SET_MAXNAMELEN - 1);
 
-	get_set_byname(argv[optind - 1], info);
+	get_set_byname(optarg, info);
 	parse_bindings(argv[optind], info);
 	optind++;
 	
 	*flags = 1;
 }
 
-/* Function which parses command options; returns true if it
-   ate an option */
-static int
-parse(int c, char **argv, int invert, unsigned int *flags,
-      const struct ipt_entry *entry, struct ipt_entry_target **target)
+static int SET_parse(int c, char **argv, int invert, unsigned int *flags,
+                     const void *entry, struct xt_entry_target **target)
 {
 	struct ipt_set_info_target *myinfo =
 	    (struct ipt_set_info_target *) (*target)->data;
@@ -107,11 +99,10 @@ parse(int c, char **argv, int invert, unsigned int *flags,
 	return 1;
 }
 
-/* Final check; must specify at least one. */
-static void final_check(unsigned int flags)
+static void SET_check(unsigned int flags)
 {
 	if (!flags)
-		exit_error(PARAMETER_PROBLEM,
+		xtables_error(PARAMETER_PROBLEM,
 			   "You must specify either `--add-set' or `--del-set'");
 }
 
@@ -135,46 +126,39 @@ print_target(const char *prefix, const struct ipt_set_info *info)
 	printf(" ");
 }
 
-/* Prints out the targinfo. */
-static void
-print(const struct ipt_ip *ip,
-      const struct ipt_entry_target *target, int numeric)
+static void SET_print(const void *ip, const struct xt_entry_target *target,
+                      int numeric)
 {
-	struct ipt_set_info_target *info =
-	    (struct ipt_set_info_target *) target->data;
+	const struct ipt_set_info_target *info = (const void *)target->data;
 
 	print_target("add-set", &info->add_set);
 	print_target("del-set", &info->del_set);
 }
 
-/* Saves the union ipt_targinfo in parsable form to stdout. */
-static void
-save(const struct ipt_ip *ip, const struct ipt_entry_target *target)
+static void SET_save(const void *ip, const struct xt_entry_target *target)
 {
-	struct ipt_set_info_target *info =
-	    (struct ipt_set_info_target *) target->data;
+	const struct ipt_set_info_target *info = (const void *)target->data;
 
 	print_target("--add-set", &info->add_set);
 	print_target("--del-set", &info->del_set);
 }
 
-static
-struct iptables_target ipt_set_target 
-= {
+static struct xtables_target set_tg_reg = {
 	.name		= "SET",
-	.version	= IPTABLES_VERSION,
-	.size		= IPT_ALIGN(sizeof(struct ipt_set_info_target)),
-	.userspacesize	= IPT_ALIGN(sizeof(struct ipt_set_info_target)),
-	.help		= &help,
-	.init		= &init,
-	.parse		= &parse,
-	.final_check	= &final_check,
-	.print		= &print,
-	.save		= &save,
-	.extra_opts	= opts
+	.version	= XTABLES_VERSION,
+	.family		= NFPROTO_IPV4,
+	.size		= XT_ALIGN(sizeof(struct ipt_set_info_target)),
+	.userspacesize	= XT_ALIGN(sizeof(struct ipt_set_info_target)),
+	.help		= SET_help,
+	.init		= SET_init,
+	.parse		= SET_parse,
+	.final_check	= SET_check,
+	.print		= SET_print,
+	.save		= SET_save,
+	.extra_opts	= SET_opts,
 };
 
-void ipt_SET_init(void)
+void libipt_SET_init(void)
 {
-	register_target(&ipt_set_target);
+	xtables_register_target(&set_tg_reg);
 }
