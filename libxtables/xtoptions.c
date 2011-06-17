@@ -757,13 +757,13 @@ static void xtopt_parse_ethermac(struct xt_option_call *cb)
 
 	for (i = 0; i < ARRAY_SIZE(cb->val.ethermac) - 1; ++i) {
 		cb->val.ethermac[i] = strtoul(arg, &end, 16);
-		if (cb->val.ethermac[i] > UINT8_MAX || *end != ':')
+		if (*end != ':' || end - arg > 2)
 			goto out;
 		arg = end + 1;
 	}
 	i = ARRAY_SIZE(cb->val.ethermac) - 1;
 	cb->val.ethermac[i] = strtoul(arg, &end, 16);
-	if (cb->val.ethermac[i] > UINT8_MAX || *end != '\0')
+	if (*end != '\0' || end - arg > 2)
 		goto out;
 	if (cb->entry->flags & XTOPT_PUT)
 		memcpy(XTOPT_MKPTR(cb), cb->val.ethermac,
@@ -826,6 +826,12 @@ void xtables_option_parse(struct xt_option_call *cb)
 		xt_params->exit_err(PARAMETER_PROBLEM,
 			"%s: option \"--%s\" requires an argument.\n",
 			cb->ext_name, entry->name);
+	/*
+	 * Fill in fallback value for "nvals", in case an extension (as it
+	 * happened with libxt_conntrack.2) tries to read it, despite not using
+	 * a *RC option type.
+	 */
+	cb->nvals = 1;
 	if (entry->type <= ARRAY_SIZE(xtopt_subparse) &&
 	    xtopt_subparse[entry->type] != NULL)
 		xtopt_subparse[entry->type](cb);
@@ -847,8 +853,14 @@ void xtables_option_metavalidate(const char *name,
 			xt_params->exit_err(OTHER_PROBLEM,
 				"Extension %s uses invalid ID %u\n",
 				name, entry->id);
-		if (!(entry->flags & XTOPT_PUT))
+		if (!(entry->flags & XTOPT_PUT)) {
+			if (entry->ptroff != 0)
+				xt_params->exit_err(OTHER_PROBLEM,
+					"%s: ptroff for \"--%s\" is non-"
+					"zero but no XTOPT_PUT is specified. "
+					"Oversight?", name, entry->name);
 			continue;
+		}
 		if (entry->type >= ARRAY_SIZE(xtopt_psize) ||
 		    xtopt_psize[entry->type] == 0)
 			xt_params->exit_err(OTHER_PROBLEM,
@@ -908,6 +920,7 @@ void xtables_option_tpcall(unsigned int c, char **argv, bool invert,
 	cb.xflags   = t->tflags;
 	cb.target   = &t->t;
 	cb.xt_entry = fw;
+	cb.udata    = t->udata;
 	t->x6_parse(&cb);
 	t->tflags = cb.xflags;
 }
@@ -943,6 +956,7 @@ void xtables_option_mpcall(unsigned int c, char **argv, bool invert,
 	cb.xflags   = m->mflags;
 	cb.match    = &m->m;
 	cb.xt_entry = fw;
+	cb.udata    = m->udata;
 	m->x6_parse(&cb);
 	m->mflags = cb.xflags;
 }
@@ -1028,6 +1042,7 @@ void xtables_option_tfcall(struct xtables_target *t)
 		cb.ext_name = t->name;
 		cb.data     = t->t->data;
 		cb.xflags   = t->tflags;
+		cb.udata    = t->udata;
 		t->x6_fcheck(&cb);
 	} else if (t->final_check != NULL) {
 		t->final_check(t->tflags);
@@ -1048,6 +1063,7 @@ void xtables_option_mfcall(struct xtables_match *m)
 		cb.ext_name = m->name;
 		cb.data     = m->m->data;
 		cb.xflags   = m->mflags;
+		cb.udata    = m->udata;
 		m->x6_fcheck(&cb);
 	} else if (m->final_check != NULL) {
 		m->final_check(m->mflags);
@@ -1123,6 +1139,7 @@ struct xtables_lmap *xtables_lmap_init(const char *file)
 	fclose(fp);
 	return lmap_head;
  out:
+	fclose(fp);
 	xtables_lmap_free(lmap_head);
 	return NULL;
 }

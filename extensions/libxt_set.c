@@ -64,8 +64,6 @@ set_parse_v0(int c, char **argv, int invert, unsigned int *flags,
 		if (info->u.flags[0])
 			xtables_error(PARAMETER_PROBLEM,
 				      "--match-set can be specified only once");
-
-		xtables_check_inverse(optarg, &invert, &optind, 0, argv);
 		if (invert)
 			info->u.flags[0] |= IPSET_MATCH_INV;
 
@@ -130,11 +128,6 @@ set_save_v0(const void *ip, const struct xt_entry_match *match)
 }
 
 /* Revision 1 */
-
-#define set_help_v1	set_help_v0
-#define set_opts_v1	set_opts_v0
-#define set_check_v1	set_check_v0
-
 static int
 set_parse_v1(int c, char **argv, int invert, unsigned int *flags,
 	     const void *entry, struct xt_entry_match **match)
@@ -151,8 +144,6 @@ set_parse_v1(int c, char **argv, int invert, unsigned int *flags,
 		if (info->dim)
 			xtables_error(PARAMETER_PROBLEM,
 				      "--match-set can be specified only once");
-
-		xtables_check_inverse(optarg, &invert, &optind, 0, argv);
 		if (invert)
 			info->flags |= IPSET_INV_MATCH;
 
@@ -236,12 +227,12 @@ static struct xtables_match set_mt_reg[] = {
 		.family		= NFPROTO_UNSPEC,
 		.size		= XT_ALIGN(sizeof(struct xt_set_info_match_v1)),
 		.userspacesize	= XT_ALIGN(sizeof(struct xt_set_info_match_v1)),
-		.help		= set_help_v1,
+		.help		= set_help_v0,
 		.parse		= set_parse_v1,
-		.final_check	= set_check_v1,
+		.final_check	= set_check_v0,
 		.print		= set_print_v1,
 		.save		= set_save_v1,
-		.extra_opts	= set_opts_v1,
+		.extra_opts	= set_opts_v0,
 	},
 };
 

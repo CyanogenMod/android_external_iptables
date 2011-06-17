@@ -23,10 +23,6 @@
 #define DEBUGP(x, args...)
 #endif
 
-#ifndef IPTABLES_MULTI
-int line = 0;
-#endif
-
 struct xtables_globals iptables_xml_globals = {
 	.option_offset = 0,
 	.program_version = IPTABLES_VERSION,
@@ -60,7 +56,7 @@ print_usage(const char *name, const char *version)
 }
 
 static int
-parse_counters(char *string, struct ipt_counters *ctr)
+parse_counters(char *string, struct xt_counters *ctr)
 {
 	__u64 *pcnt, *bcnt;
 
@@ -85,16 +81,16 @@ static unsigned int oldargc = 0;
 /* arg meta data, were they quoted, frinstance */
 static int newargvattr[255];
 
-#define IPT_CHAIN_MAXNAMELEN IPT_TABLE_MAXNAMELEN
-static char closeActionTag[IPT_TABLE_MAXNAMELEN + 1];
-static char closeRuleTag[IPT_TABLE_MAXNAMELEN + 1];
-static char curTable[IPT_TABLE_MAXNAMELEN + 1];
-static char curChain[IPT_CHAIN_MAXNAMELEN + 1];
+#define XT_CHAIN_MAXNAMELEN XT_TABLE_MAXNAMELEN
+static char closeActionTag[XT_TABLE_MAXNAMELEN + 1];
+static char closeRuleTag[XT_TABLE_MAXNAMELEN + 1];
+static char curTable[XT_TABLE_MAXNAMELEN + 1];
+static char curChain[XT_CHAIN_MAXNAMELEN + 1];
 
 struct chain {
 	char *chain;
 	char *policy;
-	struct ipt_counters count;
+	struct xt_counters count;
 	int created;
 };
 
@@ -237,12 +233,12 @@ closeChain(void)
 }
 
 static void
-openChain(char *chain, char *policy, struct ipt_counters *ctr, char close)
+openChain(char *chain, char *policy, struct xt_counters *ctr, char close)
 {
 	closeChain();
 
-	strncpy(curChain, chain, IPT_CHAIN_MAXNAMELEN);
-	curChain[IPT_CHAIN_MAXNAMELEN] = '\0';
+	strncpy(curChain, chain, XT_CHAIN_MAXNAMELEN);
+	curChain[XT_CHAIN_MAXNAMELEN] = '\0';
 
 	printf("    <chain ");
 	xmlAttrS("name", curChain);
@@ -291,7 +287,7 @@ needChain(char *chain)
 }
 
 static void
-saveChain(char *chain, char *policy, struct ipt_counters *ctr)
+saveChain(char *chain, char *policy, struct xt_counters *ctr)
 {
 	if (nextChain >= maxChains) {
 		xtables_error(PARAMETER_PROBLEM,
@@ -336,8 +332,8 @@ openTable(char *table)
 {
 	closeTable();
 
-	strncpy(curTable, table, IPT_TABLE_MAXNAMELEN);
-	curTable[IPT_TABLE_MAXNAMELEN] = '\0';
+	strncpy(curTable, table, XT_TABLE_MAXNAMELEN);
+	curTable[XT_TABLE_MAXNAMELEN] = '\0';
 
 	printf("  <table ");
 	xmlAttrS("name", curTable);
@@ -596,8 +592,8 @@ do_rule(char *pcnt, char *bcnt, int argc, char *argv[], int argvattr[])
 			xmlAttrS("byte-count", bcnt);
 		printf(">\n");
 
-		strncpy(closeRuleTag, "      </rule>\n", IPT_TABLE_MAXNAMELEN);
-		closeRuleTag[IPT_TABLE_MAXNAMELEN] = '\0';
+		strncpy(closeRuleTag, "      </rule>\n", XT_TABLE_MAXNAMELEN);
+		closeRuleTag[XT_TABLE_MAXNAMELEN] = '\0';
 
 		/* no point in writing out condition if there isn't one */
 		if (argc >= 3 && !isTarget(argv[2])) {
@@ -611,19 +607,14 @@ do_rule(char *pcnt, char *bcnt, int argc, char *argv[], int argvattr[])
 	if (!closeActionTag[0]) {
 		printf("       <actions>\n");
 		strncpy(closeActionTag, "       </actions>\n",
-			IPT_TABLE_MAXNAMELEN);
-		closeActionTag[IPT_TABLE_MAXNAMELEN] = '\0';
+			XT_TABLE_MAXNAMELEN);
+		closeActionTag[XT_TABLE_MAXNAMELEN] = '\0';
 	}
 	do_rule_part(NULL, NULL, 1, argc, argv, argvattr);
 }
 
-#ifdef IPTABLES_MULTI
 int
 iptables_xml_main(int argc, char *argv[])
-#else
-int
-main(int argc, char *argv[])
-#endif
 {
 	char buffer[10240];
 	int c;
@@ -703,7 +694,7 @@ main(int argc, char *argv[])
 		} else if ((buffer[0] == ':') && (curTable[0])) {
 			/* New chain. */
 			char *policy, *chain;
-			struct ipt_counters count;
+			struct xt_counters count;
 			char *ctrs;
 
 			chain = strtok(buffer + 1, " \t\n");
@@ -865,8 +856,7 @@ main(int argc, char *argv[])
 		exit(1);
 	}
 
-	if (in != NULL)
-		fclose(in);
+	fclose(in);
 	printf("</iptables-rules>\n");
 	free_argv();
 
