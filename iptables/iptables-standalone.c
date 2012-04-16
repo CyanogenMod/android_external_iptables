@@ -38,17 +38,12 @@
 #include <iptables.h>
 #include "iptables-multi.h"
 
-#ifdef IPTABLES_MULTI
 int
 iptables_main(int argc, char *argv[])
-#else
-int
-main(int argc, char *argv[])
-#endif
 {
 	int ret;
 	char *table = "filter";
-	struct iptc_handle *handle = NULL;
+	struct xtc_handle *handle = NULL;
 
 	iptables_globals.program_name = "iptables";
 	ret = xtables_init_all(&iptables_globals, NFPROTO_IPV4);

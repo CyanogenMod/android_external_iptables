@@ -332,7 +332,8 @@ byte counters are also listed, with the suffix 'K', 'M' or 'G' for
 1000, 1,000,000 and 1,000,000,000 multipliers respectively (but see
 the \fB\-x\fP flag to change this).
 For appending, insertion, deletion and replacement, this causes
-detailed information on the rule or rules to be printed.
+detailed information on the rule or rules to be printed. \fB\-v\fP may be
+specified multiple times to possibly emit more detailed debug statements.
 .TP
 \fB\-n\fP, \fB\-\-numeric\fP
 Numeric output.
@@ -355,9 +356,9 @@ corresponding to that rule's position in the chain.
 When adding or inserting rules into a chain, use \fIcommand\fP
 to load any necessary modules (targets, match extensions, etc).
 .SH MATCH EXTENSIONS
-iptables can use extended packet matching modules.  These are loaded
-in two ways: implicitly, when \fB\-p\fP or \fB\-\-protocol\fP
-is specified, or with the \fB\-m\fP or \fB\-\-match\fP
+.PP
+iptables can use extended packet matching modules
+with the \fB\-m\fP or \fB\-\-match\fP
 options, followed by the matching module name; after these, various
 extra command line options become available, depending on the specific
 module.  You can specify multiple extended match modules in one line,
@@ -365,8 +366,9 @@ and you can use the \fB\-h\fP or \fB\-\-help\fP
 options after the module has been specified to receive help specific
 to that module.
 .PP
-The following are included in the base package, and most of these can
-be preceded by a "\fB!\fP" to invert the sense of the match.
+If the \fB\-p\fP or \fB\-\-protocol\fP was specified and if and only if an
+unknown option is encountered, iptables will try load a match module of the
+same name as the protocol, to try making the option available.
 .\" @MATCH@
 .SH TARGET EXTENSIONS
 iptables can use extended target modules: the following are included

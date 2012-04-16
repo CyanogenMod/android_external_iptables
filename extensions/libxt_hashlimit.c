@@ -23,7 +23,10 @@
 
 /* miliseconds */
 #define XT_HASHLIMIT_GCINTERVAL	1000
-#define XT_HASHLIMIT_EXPIRE	10000
+
+struct hashlimit_mt_udata {
+	uint32_t mult;
+};
 
 static void hashlimit_help(void)
 {
@@ -56,8 +59,9 @@ enum {
 	O_HTABLE_MAX,
 	O_HTABLE_GCINT,
 	O_HTABLE_EXPIRE,
-	F_UPTO  = 1 << O_UPTO,
-	F_ABOVE = 1 << O_ABOVE,
+	F_UPTO          = 1 << O_UPTO,
+	F_ABOVE         = 1 << O_ABOVE,
+	F_HTABLE_EXPIRE = 1 << O_HTABLE_EXPIRE,
 };
 
 static void hashlimit_mt_help(void)
@@ -84,7 +88,7 @@ static void hashlimit_mt_help(void)
 #define s struct xt_hashlimit_info
 static const struct xt_option_entry hashlimit_opts[] = {
 	{.name = "hashlimit", .id = O_UPTO, .excl = F_ABOVE,
-	 .type = XTTYPE_STRING, .flags = XTOPT_INVERT},
+	 .type = XTTYPE_STRING},
 	{.name = "hashlimit-burst", .id = O_BURST, .type = XTTYPE_UINT32,
 	 .min = 1, .max = 10000, .flags = XTOPT_PUT,
 	 XTOPT_POINTER(s, cfg.burst)},
@@ -141,25 +145,25 @@ static const struct xt_option_entry hashlimit_mt_opts[] = {
 #undef s
 
 static
-int parse_rate(const char *rate, uint32_t *val)
+int parse_rate(const char *rate, uint32_t *val, struct hashlimit_mt_udata *ud)
 {
 	const char *delim;
 	uint32_t r;
-	uint32_t mult = 1;  /* Seconds by default. */
 
+	ud->mult = 1;  /* Seconds by default. */
 	delim = strchr(rate, '/');
 	if (delim) {
 		if (strlen(delim+1) == 0)
 			return 0;
 
 		if (strncasecmp(delim+1, "second", strlen(delim+1)) == 0)
-			mult = 1;
+			ud->mult = 1;
 		else if (strncasecmp(delim+1, "minute", strlen(delim+1)) == 0)
-			mult = 60;
+			ud->mult = 60;
 		else if (strncasecmp(delim+1, "hour", strlen(delim+1)) == 0)
-			mult = 60*60;
+			ud->mult = 60*60;
 		else if (strncasecmp(delim+1, "day", strlen(delim+1)) == 0)
-			mult = 24*60*60;
+			ud->mult = 24*60*60;
 		else
 			return 0;
 	}
@@ -169,10 +173,10 @@ int parse_rate(const char *rate, uint32_t *val)
 
 	/* This would get mapped to infinite (1/day is minimum they
            can specify, so we're ok at that end). */
-	if (r / mult > XT_HASHLIMIT_SCALE)
+	if (r / ud->mult > XT_HASHLIMIT_SCALE)
 		xtables_error(PARAMETER_PROBLEM, "Rate too fast \"%s\"\n", rate);
 
-	*val = XT_HASHLIMIT_SCALE * mult / r;
+	*val = XT_HASHLIMIT_SCALE * ud->mult / r;
 	return 1;
 }
 
@@ -182,7 +186,6 @@ static void hashlimit_init(struct xt_entry_match *m)
 
 	r->cfg.burst = XT_HASHLIMIT_BURST;
 	r->cfg.gc_interval = XT_HASHLIMIT_GCINTERVAL;
-	r->cfg.expire = XT_HASHLIMIT_EXPIRE;
 
 }
 
@@ -193,7 +196,6 @@ static void hashlimit_mt4_init(struct xt_entry_match *match)
 	info->cfg.mode        = 0;
 	info->cfg.burst       = XT_HASHLIMIT_BURST;
 	info->cfg.gc_interval = XT_HASHLIMIT_GCINTERVAL;
-	info->cfg.expire      = XT_HASHLIMIT_EXPIRE;
 	info->cfg.srcmask     = 32;
 	info->cfg.dstmask     = 32;
 }
@@ -205,7 +207,6 @@ static void hashlimit_mt6_init(struct xt_entry_match *match)
 	info->cfg.mode        = 0;
 	info->cfg.burst       = XT_HASHLIMIT_BURST;
 	info->cfg.gc_interval = XT_HASHLIMIT_GCINTERVAL;
-	info->cfg.expire      = XT_HASHLIMIT_EXPIRE;
 	info->cfg.srcmask     = 128;
 	info->cfg.dstmask     = 128;
 }
@@ -246,18 +247,9 @@ static void hashlimit_parse(struct xt_option_call *cb)
 	xtables_option_parse(cb);
 	switch (cb->entry->id) {
 	case O_UPTO:
-		if (cb->invert)
-			info->cfg.mode |= XT_HASHLIMIT_INVERT;
-		if (!parse_rate(cb->arg, &info->cfg.avg))
+		if (!parse_rate(cb->arg, &info->cfg.avg, cb->udata))
 			xtables_param_act(XTF_BAD_VALUE, "hashlimit",
 			          "--hashlimit-upto", cb->arg);
-		break;
-	case O_ABOVE:
-		if (!cb->invert)
-			info->cfg.mode |= XT_HASHLIMIT_INVERT;
-		if (!parse_rate(cb->arg, &info->cfg.avg))
-			xtables_param_act(XTF_BAD_VALUE, "hashlimit",
-			          "--hashlimit-above", cb->arg);
 		break;
 	case O_MODE:
 		if (parse_mode(&info->cfg.mode, cb->arg) < 0)
@@ -276,14 +268,14 @@ static void hashlimit_mt_parse(struct xt_option_call *cb)
 	case O_UPTO:
 		if (cb->invert)
 			info->cfg.mode |= XT_HASHLIMIT_INVERT;
-		if (!parse_rate(cb->arg, &info->cfg.avg))
+		if (!parse_rate(cb->arg, &info->cfg.avg, cb->udata))
 			xtables_param_act(XTF_BAD_VALUE, "hashlimit",
 			          "--hashlimit-upto", cb->arg);
 		break;
 	case O_ABOVE:
 		if (!cb->invert)
 			info->cfg.mode |= XT_HASHLIMIT_INVERT;
-		if (!parse_rate(cb->arg, &info->cfg.avg))
+		if (!parse_rate(cb->arg, &info->cfg.avg, cb->udata))
 			xtables_param_act(XTF_BAD_VALUE, "hashlimit",
 			          "--hashlimit-above", cb->arg);
 		break;
@@ -303,9 +295,26 @@ static void hashlimit_mt_parse(struct xt_option_call *cb)
 
 static void hashlimit_check(struct xt_fcheck_call *cb)
 {
+	const struct hashlimit_mt_udata *udata = cb->udata;
+	struct xt_hashlimit_info *info = cb->data;
+
 	if (!(cb->xflags & (F_UPTO | F_ABOVE)))
 		xtables_error(PARAMETER_PROBLEM,
 				"You have to specify --hashlimit");
+	if (!(cb->xflags & F_HTABLE_EXPIRE))
+		info->cfg.expire = udata->mult * 1000; /* from s to msec */
+}
+
+static void hashlimit_mt_check(struct xt_fcheck_call *cb)
+{
+	const struct hashlimit_mt_udata *udata = cb->udata;
+	struct xt_hashlimit_mtinfo1 *info = cb->data;
+
+	if (!(cb->xflags & (F_UPTO | F_ABOVE)))
+		xtables_error(PARAMETER_PROBLEM,
+				"You have to specify --hashlimit");
+	if (!(cb->xflags & F_HTABLE_EXPIRE))
+		info->cfg.expire = udata->mult * 1000; /* from s to msec */
 }
 
 static const struct rates
@@ -317,7 +326,7 @@ static const struct rates
 	      { "min", XT_HASHLIMIT_SCALE*60 },
 	      { "sec", XT_HASHLIMIT_SCALE } };
 
-static void print_rate(uint32_t period)
+static uint32_t print_rate(uint32_t period)
 {
 	unsigned int i;
 
@@ -327,6 +336,8 @@ static void print_rate(uint32_t period)
 			break;
 
 	printf(" %u/%s", rates[i-1].mult / period, rates[i-1].name);
+	/* return in msec */
+	return rates[i-1].mult / XT_HASHLIMIT_SCALE * 1000;
 }
 
 static void print_mode(unsigned int mode, char separator)
@@ -361,7 +372,10 @@ static void hashlimit_print(const void *ip,
                             const struct xt_entry_match *match, int numeric)
 {
 	const struct xt_hashlimit_info *r = (const void *)match->data;
-	fputs(" limit: avg", stdout); print_rate(r->cfg.avg);
+	uint32_t quantum;
+
+	fputs(" limit: avg", stdout);
+	quantum = print_rate(r->cfg.avg);
 	printf(" burst %u", r->cfg.burst);
 	fputs(" mode", stdout);
 	print_mode(r->cfg.mode, '-');
@@ -371,18 +385,20 @@ static void hashlimit_print(const void *ip,
 		printf(" htable-max %u", r->cfg.max);
 	if (r->cfg.gc_interval != XT_HASHLIMIT_GCINTERVAL)
 		printf(" htable-gcinterval %u", r->cfg.gc_interval);
-	if (r->cfg.expire != XT_HASHLIMIT_EXPIRE)
+	if (r->cfg.expire != quantum)
 		printf(" htable-expire %u", r->cfg.expire);
 }
 
 static void
 hashlimit_mt_print(const struct xt_hashlimit_mtinfo1 *info, unsigned int dmask)
 {
+	uint32_t quantum;
+
 	if (info->cfg.mode & XT_HASHLIMIT_INVERT)
 		fputs(" limit: above", stdout);
 	else
 		fputs(" limit: up to", stdout);
-	print_rate(info->cfg.avg);
+	quantum = print_rate(info->cfg.avg);
 	printf(" burst %u", info->cfg.burst);
 	if (info->cfg.mode & (XT_HASHLIMIT_HASH_SIP | XT_HASHLIMIT_HASH_SPT |
 	    XT_HASHLIMIT_HASH_DIP | XT_HASHLIMIT_HASH_DPT)) {
@@ -395,7 +411,7 @@ hashlimit_mt_print(const struct xt_hashlimit_mtinfo1 *info, unsigned int dmask)
 		printf(" htable-max %u", info->cfg.max);
 	if (info->cfg.gc_interval != XT_HASHLIMIT_GCINTERVAL)
 		printf(" htable-gcinterval %u", info->cfg.gc_interval);
-	if (info->cfg.expire != XT_HASHLIMIT_EXPIRE)
+	if (info->cfg.expire != quantum)
 		printf(" htable-expire %u", info->cfg.expire);
 
 	if (info->cfg.srcmask != dmask)
@@ -425,8 +441,10 @@ hashlimit_mt6_print(const void *ip, const struct xt_entry_match *match,
 static void hashlimit_save(const void *ip, const struct xt_entry_match *match)
 {
 	const struct xt_hashlimit_info *r = (const void *)match->data;
+	uint32_t quantum;
 
-	fputs(" --hashlimit", stdout); print_rate(r->cfg.avg);
+	fputs(" --hashlimit", stdout);
+	quantum = print_rate(r->cfg.avg);
 	printf(" --hashlimit-burst %u", r->cfg.burst);
 
 	fputs(" --hashlimit-mode", stdout);
@@ -440,18 +458,20 @@ static void hashlimit_save(const void *ip, const struct xt_entry_match *match)
 		printf(" --hashlimit-htable-max %u", r->cfg.max);
 	if (r->cfg.gc_interval != XT_HASHLIMIT_GCINTERVAL)
 		printf(" --hashlimit-htable-gcinterval %u", r->cfg.gc_interval);
-	if (r->cfg.expire != XT_HASHLIMIT_EXPIRE)
+	if (r->cfg.expire != quantum)
 		printf(" --hashlimit-htable-expire %u", r->cfg.expire);
 }
 
 static void
 hashlimit_mt_save(const struct xt_hashlimit_mtinfo1 *info, unsigned int dmask)
 {
+	uint32_t quantum;
+
 	if (info->cfg.mode & XT_HASHLIMIT_INVERT)
 		fputs(" --hashlimit-above", stdout);
 	else
 		fputs(" --hashlimit-upto", stdout);
-	print_rate(info->cfg.avg);
+	quantum = print_rate(info->cfg.avg);
 	printf(" --hashlimit-burst %u", info->cfg.burst);
 
 	if (info->cfg.mode & (XT_HASHLIMIT_HASH_SIP | XT_HASHLIMIT_HASH_SPT |
@@ -468,7 +488,7 @@ hashlimit_mt_save(const struct xt_hashlimit_mtinfo1 *info, unsigned int dmask)
 		printf(" --hashlimit-htable-max %u", info->cfg.max);
 	if (info->cfg.gc_interval != XT_HASHLIMIT_GCINTERVAL)
 		printf(" --hashlimit-htable-gcinterval %u", info->cfg.gc_interval);
-	if (info->cfg.expire != XT_HASHLIMIT_EXPIRE)
+	if (info->cfg.expire != quantum)
 		printf(" --hashlimit-htable-expire %u", info->cfg.expire);
 
 	if (info->cfg.srcmask != dmask)
@@ -507,7 +527,8 @@ static struct xtables_match hashlimit_mt_reg[] = {
 		.x6_fcheck     = hashlimit_check,
 		.print         = hashlimit_print,
 		.save          = hashlimit_save,
-		.x6_options    = hashlimit_mt_opts,
+		.x6_options    = hashlimit_opts,
+		.udata_size    = sizeof(struct hashlimit_mt_udata),
 	},
 	{
 		.version       = XTABLES_VERSION,
@@ -519,10 +540,11 @@ static struct xtables_match hashlimit_mt_reg[] = {
 		.help          = hashlimit_mt_help,
 		.init          = hashlimit_mt4_init,
 		.x6_parse      = hashlimit_mt_parse,
-		.x6_fcheck     = hashlimit_check,
+		.x6_fcheck     = hashlimit_mt_check,
 		.print         = hashlimit_mt4_print,
 		.save          = hashlimit_mt4_save,
 		.x6_options    = hashlimit_mt_opts,
+		.udata_size    = sizeof(struct hashlimit_mt_udata),
 	},
 	{
 		.version       = XTABLES_VERSION,
@@ -534,10 +556,11 @@ static struct xtables_match hashlimit_mt_reg[] = {
 		.help          = hashlimit_mt_help,
 		.init          = hashlimit_mt6_init,
 		.x6_parse      = hashlimit_mt_parse,
-		.x6_fcheck     = hashlimit_check,
+		.x6_fcheck     = hashlimit_mt_check,
 		.print         = hashlimit_mt6_print,
 		.save          = hashlimit_mt6_save,
 		.x6_options    = hashlimit_mt_opts,
+		.udata_size    = sizeof(struct hashlimit_mt_udata),
 	},
 };
 

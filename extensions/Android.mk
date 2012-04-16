@@ -33,6 +33,7 @@ MY_intermediates := $(call local-intermediates-dir)
 # LOCAL_PATH needed because of dirty #include "blabla.c"
 LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../include/ \
+	$(LOCAL_PATH)/../ \
 	$(KERNEL_HEADERS) \
 	$(MY_intermediates) \
 	$(LOCAL_PATH)
