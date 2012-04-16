@@ -1,7 +1,7 @@
 #! /bin/sh
 #
 set -e
-
+## XXX ignore the version below, see configure.ac and git log instead. XXX
 VERSION=1.4.7
 PREV_VERSION=1.4.6
 TMPDIR=/tmp/ipt-release

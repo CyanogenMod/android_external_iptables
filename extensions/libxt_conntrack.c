@@ -110,9 +110,48 @@ static const struct xt_option_entry conntrack_mt_opts_v0[] = {
 };
 #undef s
 
-#define s struct xt_conntrack_mtinfo3 /* for v1-v3 */
-/* We exploit the fact that v1-v3 share the same layout */
-static const struct xt_option_entry conntrack_mt_opts[] = {
+#define s struct xt_conntrack_mtinfo2
+/* We exploit the fact that v1-v2 share the same xt_o_e layout */
+static const struct xt_option_entry conntrack2_mt_opts[] = {
+	{.name = "ctstate", .id = O_CTSTATE, .type = XTTYPE_STRING,
+	 .flags = XTOPT_INVERT},
+	{.name = "ctproto", .id = O_CTPROTO, .type = XTTYPE_PROTOCOL,
+	 .flags = XTOPT_INVERT},
+	{.name = "ctorigsrc", .id = O_CTORIGSRC, .type = XTTYPE_HOSTMASK,
+	 .flags = XTOPT_INVERT},
+	{.name = "ctorigdst", .id = O_CTORIGDST, .type = XTTYPE_HOSTMASK,
+	 .flags = XTOPT_INVERT},
+	{.name = "ctreplsrc", .id = O_CTREPLSRC, .type = XTTYPE_HOSTMASK,
+	 .flags = XTOPT_INVERT},
+	{.name = "ctrepldst", .id = O_CTREPLDST, .type = XTTYPE_HOSTMASK,
+	 .flags = XTOPT_INVERT},
+	{.name = "ctstatus", .id = O_CTSTATUS, .type = XTTYPE_STRING,
+	 .flags = XTOPT_INVERT},
+	{.name = "ctexpire", .id = O_CTEXPIRE, .type = XTTYPE_UINT32RC,
+	 .flags = XTOPT_INVERT},
+	/*
+	 * Rev 1 and 2 only store one port, and we would normally use
+	 * %XTTYPE_PORT (rather than %XTTYPE_PORTRC) for that. The resulting
+	 * error message - in case a user passed a range nevertheless -
+	 * "port 22:23 resolved to nothing" is not quite as useful as using
+	 * %XTTYPE_PORTC and libxt_conntrack's own range test.
+	 */
+	{.name = "ctorigsrcport", .id = O_CTORIGSRCPORT, .type = XTTYPE_PORTRC,
+	 .flags = XTOPT_INVERT | XTOPT_NBO},
+	{.name = "ctorigdstport", .id = O_CTORIGDSTPORT, .type = XTTYPE_PORTRC,
+	 .flags = XTOPT_INVERT | XTOPT_NBO},
+	{.name = "ctreplsrcport", .id = O_CTREPLSRCPORT, .type = XTTYPE_PORTRC,
+	 .flags = XTOPT_INVERT | XTOPT_NBO},
+	{.name = "ctrepldstport", .id = O_CTREPLDSTPORT, .type = XTTYPE_PORTRC,
+	 .flags = XTOPT_INVERT | XTOPT_NBO},
+	{.name = "ctdir", .id = O_CTDIR, .type = XTTYPE_STRING},
+	XTOPT_TABLEEND,
+};
+#undef s
+
+#define s struct xt_conntrack_mtinfo3
+/* Difference from v2 is the non-NBO form. */
+static const struct xt_option_entry conntrack3_mt_opts[] = {
 	{.name = "ctstate", .id = O_CTSTATE, .type = XTTYPE_STRING,
 	 .flags = XTOPT_INVERT},
 	{.name = "ctproto", .id = O_CTPROTO, .type = XTTYPE_PROTOCOL,
@@ -303,10 +342,9 @@ static void conntrack_parse(struct xt_option_call *cb)
 			sinfo->invflags |= XT_CONNTRACK_STATE;
 		break;
 	case O_CTPROTO:
+		sinfo->tuple[IP_CT_DIR_ORIGINAL].dst.protonum = cb->val.protocol;
 		if (cb->invert)
 			sinfo->invflags |= XT_CONNTRACK_PROTO;
-		sinfo->tuple[IP_CT_DIR_ORIGINAL].dst.protonum = cb->val.protocol;
-
 		if (sinfo->tuple[IP_CT_DIR_ORIGINAL].dst.protonum == 0
 		    && (sinfo->invflags & XT_INV_PROTO))
 			xtables_error(PARAMETER_PROBLEM,
@@ -992,7 +1030,7 @@ static struct xtables_match conntrack_mt_reg[] = {
 		.x6_fcheck     = conntrack_mt_check,
 		.print         = conntrack1_mt4_print,
 		.save          = conntrack1_mt4_save,
-		.x6_options    = conntrack_mt_opts,
+		.x6_options    = conntrack2_mt_opts,
 	},
 	{
 		.version       = XTABLES_VERSION,
@@ -1006,7 +1044,7 @@ static struct xtables_match conntrack_mt_reg[] = {
 		.x6_fcheck     = conntrack_mt_check,
 		.print         = conntrack1_mt6_print,
 		.save          = conntrack1_mt6_save,
-		.x6_options    = conntrack_mt_opts,
+		.x6_options    = conntrack2_mt_opts,
 	},
 	{
 		.version       = XTABLES_VERSION,
@@ -1020,7 +1058,7 @@ static struct xtables_match conntrack_mt_reg[] = {
 		.x6_fcheck     = conntrack_mt_check,
 		.print         = conntrack2_mt_print,
 		.save          = conntrack2_mt_save,
-		.x6_options    = conntrack_mt_opts,
+		.x6_options    = conntrack2_mt_opts,
 	},
 	{
 		.version       = XTABLES_VERSION,
@@ -1034,7 +1072,7 @@ static struct xtables_match conntrack_mt_reg[] = {
 		.x6_fcheck     = conntrack_mt_check,
 		.print         = conntrack2_mt6_print,
 		.save          = conntrack2_mt6_save,
-		.x6_options    = conntrack_mt_opts,
+		.x6_options    = conntrack2_mt_opts,
 	},
 	{
 		.version       = XTABLES_VERSION,
@@ -1048,7 +1086,7 @@ static struct xtables_match conntrack_mt_reg[] = {
 		.x6_fcheck     = conntrack_mt_check,
 		.print         = conntrack3_mt_print,
 		.save          = conntrack3_mt_save,
-		.x6_options    = conntrack_mt_opts,
+		.x6_options    = conntrack3_mt_opts,
 	},
 	{
 		.version       = XTABLES_VERSION,
@@ -1062,7 +1100,7 @@ static struct xtables_match conntrack_mt_reg[] = {
 		.x6_fcheck     = conntrack_mt_check,
 		.print         = conntrack3_mt6_print,
 		.save          = conntrack3_mt6_save,
-		.x6_options    = conntrack_mt_opts,
+		.x6_options    = conntrack3_mt_opts,
 	},
 };
 

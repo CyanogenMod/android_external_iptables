@@ -15,6 +15,7 @@
  *	along with this program; if not, write to the Free Software
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+#include "config.h"
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -30,9 +31,16 @@
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/types.h>
+#include <sys/utsname.h>
 #include <sys/wait.h>
 #include <arpa/inet.h>
-#include <linux/magic.h> /* for PROC_SUPER_MAGIC */
+#if defined(HAVE_LINUX_MAGIC_H) && !defined(__ANDROID__)
+#	include <linux/magic.h> /* for PROC_SUPER_MAGIC */
+#elif defined(HAVE_LINUX_PROC_FS_H)
+#	include <linux/proc_fs.h>	/* Linux 2.4 */
+#else
+#	define PROC_SUPER_MAGIC	0x9fa0
+#endif
 
 #include <xtables.h>
 #include <limits.h> /* INT_MAX in ip_tables.h/ip6_tables.h */
@@ -362,6 +370,7 @@ int xtables_insmod(const char *modname, const char *modprobe, bool quiet)
 		/* not usually reached */
 		exit(1);
 	case -1:
+		free(buf);
 		return -1;
 
 	default: /* parent */
@@ -507,15 +516,13 @@ void xtables_parse_interface(const char *arg, char *vianame,
 
 	strcpy(vianame, arg);
 	if (vialen == 0)
-		memset(mask, 0, IFNAMSIZ);
+		return;
 	else if (vianame[vialen - 1] == '+') {
 		memset(mask, 0xFF, vialen - 1);
-		memset(mask + vialen - 1, 0, IFNAMSIZ - vialen + 1);
 		/* Don't remove `+' here! -HW */
 	} else {
 		/* Include nul-terminator in match */
 		memset(mask, 0xFF, vialen + 1);
-		memset(mask + vialen + 1, 0, IFNAMSIZ - vialen - 1);
 		for (i = 0; vianame[i]; i++) {
 			if (vianame[i] == '/' ||
 			    vianame[i] == ' ') {
@@ -626,6 +633,7 @@ xtables_find_match(const char *name, enum xtables_tryload tryload,
 			/* Second and subsequent clones */
 			clone = xtables_malloc(sizeof(struct xtables_match));
 			memcpy(clone, ptr, sizeof(struct xtables_match));
+			clone->udata = NULL;
 			clone->mflags = 0;
 			/* This is a clone: */
 			clone->next = clone;
@@ -1042,8 +1050,10 @@ void xtables_param_act(unsigned int status, const char *p1, ...)
 	case XTF_ONLY_ONCE:
 		p2 = va_arg(args, const char *);
 		b  = va_arg(args, unsigned int);
-		if (!b)
+		if (!b) {
+			va_end(args);
 			return;
+		}
 		xt_params->exit_err(PARAMETER_PROBLEM,
 		           "%s: \"%s\" option may only be specified once",
 		           p1, p2);
@@ -1051,8 +1061,10 @@ void xtables_param_act(unsigned int status, const char *p1, ...)
 	case XTF_NO_INVERT:
 		p2 = va_arg(args, const char *);
 		b  = va_arg(args, unsigned int);
-		if (!b)
+		if (!b) {
+			va_end(args);
 			return;
+		}
 		xt_params->exit_err(PARAMETER_PROBLEM,
 		           "%s: \"%s\" option cannot be inverted", p1, p2);
 		break;
@@ -1065,8 +1077,10 @@ void xtables_param_act(unsigned int status, const char *p1, ...)
 		break;
 	case XTF_ONE_ACTION:
 		b = va_arg(args, unsigned int);
-		if (!b)
+		if (!b) {
+			va_end(args);
 			return;
+		}
 		xt_params->exit_err(PARAMETER_PROBLEM,
 		           "%s: At most one action is possible", p1);
 		break;
@@ -1287,7 +1301,7 @@ void xtables_ipparse_multiple(const char *name, struct in_addr **addrpp,
                               struct in_addr **maskpp, unsigned int *naddrs)
 {
 	struct in_addr *addrp;
-	char buf[256], *p;
+	char buf[256], *p, *next;
 	unsigned int len, i, j, n, count = 1;
 	const char *loop = name;
 
@@ -1302,23 +1316,19 @@ void xtables_ipparse_multiple(const char *name, struct in_addr **addrpp,
 	loop = name;
 
 	for (i = 0; i < count; ++i) {
-		if (loop == NULL)
-			break;
-		if (*loop == ',')
+		while (isspace(*loop))
 			++loop;
-		if (*loop == '\0')
-			break;
-		p = strchr(loop, ',');
-		if (p != NULL)
-			len = p - loop;
+		next = strchr(loop, ',');
+		if (next != NULL)
+			len = next - loop;
 		else
 			len = strlen(loop);
-		if (len == 0 || sizeof(buf) - 1 < len)
-			break;
+		if (len > sizeof(buf) - 1)
+			xt_params->exit_err(PARAMETER_PROBLEM,
+				"Hostname too long");
 
 		strncpy(buf, loop, len);
 		buf[len] = '\0';
-		loop += len;
 		if ((p = strrchr(buf, '/')) != NULL) {
 			*p = '\0';
 			addrp = parse_ipmask(p + 1);
@@ -1356,6 +1366,9 @@ void xtables_ipparse_multiple(const char *name, struct in_addr **addrpp,
 		}
 		/* free what ipparse_hostnetwork had allocated: */
 		free(addrp);
+		if (next == NULL)
+			break;
+		loop = next + 1;
 	}
 	*naddrs = count;
 	for (i = 0; i < count; ++i)
@@ -1604,7 +1617,7 @@ xtables_ip6parse_multiple(const char *name, struct in6_addr **addrpp,
 {
 	static const struct in6_addr zero_addr;
 	struct in6_addr *addrp;
-	char buf[256], *p;
+	char buf[256], *p, *next;
 	unsigned int len, i, j, n, count = 1;
 	const char *loop = name;
 
@@ -1619,23 +1632,19 @@ xtables_ip6parse_multiple(const char *name, struct in6_addr **addrpp,
 	loop = name;
 
 	for (i = 0; i < count /*NB: count can grow*/; ++i) {
-		if (loop == NULL)
-			break;
-		if (*loop == ',')
+		while (isspace(*loop))
 			++loop;
-		if (*loop == '\0')
-			break;
-		p = strchr(loop, ',');
-		if (p != NULL)
-			len = p - loop;
+		next = strchr(loop, ',');
+		if (next != NULL)
+			len = next - loop;
 		else
 			len = strlen(loop);
-		if (len == 0 || sizeof(buf) - 1 < len)
-			break;
+		if (len > sizeof(buf) - 1)
+			xt_params->exit_err(PARAMETER_PROBLEM,
+				"Hostname too long");
 
 		strncpy(buf, loop, len);
 		buf[len] = '\0';
-		loop += len;
 		if ((p = strrchr(buf, '/')) != NULL) {
 			*p = '\0';
 			addrp = parse_ip6mask(p + 1);
@@ -1669,6 +1678,9 @@ xtables_ip6parse_multiple(const char *name, struct in6_addr **addrpp,
 		}
 		/* free what ip6parse_hostnetwork had allocated: */
 		free(addrp);
+		if (next == NULL)
+			break;
+		loop = next + 1;
 	}
 	*naddrs = count;
 	for (i = 0; i < count; ++i)
@@ -1755,35 +1767,6 @@ void xtables_save_string(const char *value)
 	}
 }
 
-/**
- * Check for option-intrapositional negation.
- * Do not use in new code.
- */
-int xtables_check_inverse(const char option[], int *invert,
-			  int *my_optind, int argc, char **argv)
-{
-	if (option == NULL || strcmp(option, "!") != 0)
-		return false;
-
-	fprintf(stderr, "Using intrapositioned negation "
-	        "(`--option ! this`) is deprecated in favor of "
-	        "extrapositioned (`! --option this`).\n");
-
-	if (*invert)
-		xt_params->exit_err(PARAMETER_PROBLEM,
-			   "Multiple `!' flags not allowed");
-	*invert = true;
-	if (my_optind != NULL) {
-		optarg = argv[*my_optind];
-		++*my_optind;
-		if (argc && *my_optind > argc)
-			xt_params->exit_err(PARAMETER_PROBLEM,
-				   "no argument following `!'");
-	}
-
-	return true;
-}
-
 const struct xtables_pprot xtables_chain_protos[] = {
 	{"tcp",       IPPROTO_TCP},
 	{"sctp",      IPPROTO_SCTP},
@@ -1829,4 +1812,21 @@ xtables_parse_protocol(const char *s)
 	xt_params->exit_err(PARAMETER_PROBLEM,
 		"unknown protocol \"%s\" specified", s);
 	return -1;
+}
+
+int kernel_version;
+
+void get_kernel_version(void)
+{
+	static struct utsname uts;
+	int x = 0, y = 0, z = 0;
+
+	if (uname(&uts) == -1) {
+		fprintf(stderr, "Unable to retrieve kernel version.\n");
+		xtables_free_opts(1);
+		exit(1);
+	}
+
+	sscanf(uts.release, "%d.%d.%d", &x, &y, &z);
+	kernel_version = LINUX_VERSION(x, y, z);
 }

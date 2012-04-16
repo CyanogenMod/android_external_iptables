@@ -6,8 +6,8 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_C_INCLUDES:= \
-	$(KERNEL_HEADERS) \
-	$(LOCAL_PATH)/../include/
+	$(LOCAL_PATH)/../include/ \
+	$(KERNEL_HEADERS)
 
 # Accommodate arm-eabi-4.4.3 tools that don't set __ANDROID__
 LOCAL_CFLAGS:=-D__ANDROID__
@@ -28,8 +28,8 @@ include $(BUILD_STATIC_LIBRARY)
 include $(CLEAR_VARS)
 
 LOCAL_C_INCLUDES:= \
-	$(KERNEL_HEADERS) \
-	$(LOCAL_PATH)/../include/
+	$(LOCAL_PATH)/../include/ \
+	$(KERNEL_HEADERS)
 
 # Accommodate arm-eabi-4.4.3 tools that don't set __ANDROID__
 LOCAL_CFLAGS:=-D__ANDROID__
