@@ -1,10 +1,11 @@
 
-AC_INIT([iptables], [1.4.11.1])
+AC_INIT([iptables], [1.4.13])
 
 # See libtool.info "Libtool's versioning system"
-libxtables_vcurrent=6
+libxtables_vcurrent=7
 libxtables_vage=0
 
+AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_PROG_INSTALL
@@ -30,7 +31,7 @@ AC_ARG_WITH([xtlibdir],
 	AS_HELP_STRING([--with-xtlibdir=PATH],
 	[Path where to install Xtables extensions [[LIBEXECDIR/xtables]]]),
 	[xtlibdir="$withval"],
-	[xtlibdir="${libexecdir}/xtables"])
+	[xtlibdir="${libdir}/xtables"])
 AC_ARG_ENABLE([ipv4],
 	AS_HELP_STRING([--disable-ipv4], [Do not build iptables]),
 	[enable_ipv4="$enableval"], [enable_ipv4="yes"])
@@ -57,19 +58,27 @@ AX_CHECK_LINKER_FLAGS([-Wl,--no-as-needed],
 	[libiptc_LDFLAGS2="-Wl,--no-as-needed"])
 AC_SUBST([libiptc_LDFLAGS2])
 
+AC_MSG_CHECKING([whether $LD knows -Wl,--no-undefined])
+saved_LDFLAGS="$LDFLAGS";
+LDFLAGS="-Wl,--no-undefined";
+AC_LINK_IFELSE([AC_LANG_SOURCE([int main(void) {}])],
+	[noundef_LDFLAGS="$LDFLAGS"; AC_MSG_RESULT([yes])],
+	[AC_MSG_RESULT([no])]
+)
+LDFLAGS="$saved_LDFLAGS";
+
 blacklist_modules="";
 
-AC_CHECK_HEADER([linux/dccp.h])
+AC_CHECK_HEADERS([linux/dccp.h linux/ip_vs.h linux/magic.h linux/proc_fs.h])
 if test "$ac_cv_header_linux_dccp_h" != "yes"; then
 	blacklist_modules="$blacklist_modules dccp";
 fi;
-
-AC_CHECK_HEADER([linux/ip_vs.h])
 if test "$ac_cv_header_linux_ip_vs_h" != "yes"; then
 	blacklist_modules="$blacklist_modules ipvs";
 fi;
 
 AC_SUBST([blacklist_modules])
+AC_CHECK_SIZEOF([struct ip6_hdr], [], [#include <netinet/ip6.h>])
 
 AM_CONDITIONAL([ENABLE_STATIC], [test "$enable_static" = "yes"])
 AM_CONDITIONAL([ENABLE_SHARED], [test "$enable_shared" = "yes"])
@@ -99,6 +108,7 @@ pkgdatadir='${datadir}/xtables';
 
 AC_SUBST([regular_CFLAGS])
 AC_SUBST([regular_CPPFLAGS])
+AC_SUBST([noundef_LDFLAGS])
 AC_SUBST([kinclude_CPPFLAGS])
 AC_SUBST([kbuilddir])
 AC_SUBST([ksourcedir])
@@ -112,6 +122,9 @@ AC_SUBST([libxtables_vmajor])
 
 AC_CONFIG_FILES([Makefile extensions/GNUmakefile include/Makefile
 	iptables/Makefile iptables/xtables.pc
-	libipq/Makefile libiptc/Makefile libiptc/libiptc.pc utils/Makefile
+	libipq/Makefile libipq/libipq.pc
+	libiptc/Makefile libiptc/libiptc.pc
+	libiptc/libip4tc.pc libiptc/libip6tc.pc
+	libxtables/Makefile utils/Makefile
 	include/xtables.h include/iptables/internal.h])
 AC_OUTPUT

@@ -31,8 +31,8 @@
 #define IPPROTO_UDPLITE	136
 #endif
 
-#define XTABLES_VERSION "libxtables.so.6"
-#define XTABLES_VERSION_CODE 6
+#define XTABLES_VERSION "libxtables.so.7"
+#define XTABLES_VERSION_CODE 7
 
 struct in_addr;
 
@@ -137,11 +137,13 @@ struct xt_option_entry {
  * @arg:	input from command line
  * @ext_name:	name of extension currently being processed
  * @entry:	current option being processed
- * @data:	per-extension data block
+ * @data:	per-extension kernel data block
  * @xflags:	options of the extension that have been used
  * @invert:	whether option was used with !
  * @nvals:	number of results in uXX_multi
  * @val:	parsed result
+ * @udata:	per-extension private scratch area
+ * 		(cf. xtables_{match,target}->udata_size)
  */
 struct xt_option_call {
 	const char *arg, *ext_name;
@@ -174,16 +176,19 @@ struct xt_option_call {
 		struct xt_entry_target **target;
 	};
 	void *xt_entry;
+	void *udata;
 };
 
 /**
  * @ext_name:	name of extension currently being processed
- * @data:	per-extension data block
+ * @data:	per-extension (kernel) data block
+ * @udata:	per-extension private scratch area
+ * 		(cf. xtables_{match,target}->udata_size)
  * @xflags:	options of the extension that have been used
  */
 struct xt_fcheck_call {
 	const char *ext_name;
-	void *data;
+	void *data, *udata;
 	unsigned int xflags;
 };
 
@@ -254,7 +259,11 @@ struct xtables_match
 	void (*x6_fcheck)(struct xt_fcheck_call *);
 	const struct xt_option_entry *x6_options;
 
+	/* Size of per-extension instance extra "global" scratch space */
+	size_t udata_size;
+
 	/* Ignore these men behind the curtain: */
+	void *udata;
 	unsigned int option_offset;
 	struct xt_entry_match *m;
 	unsigned int mflags;
@@ -318,7 +327,10 @@ struct xtables_target
 	void (*x6_fcheck)(struct xt_fcheck_call *);
 	const struct xt_option_entry *x6_options;
 
+	size_t udata_size;
+
 	/* Ignore these men behind the curtain: */
+	void *udata;
 	unsigned int option_offset;
 	struct xt_entry_target *t;
 	unsigned int tflags;
@@ -420,8 +432,6 @@ xtables_parse_interface(const char *arg, char *vianame, unsigned char *mask);
 /* this is a special 64bit data type that is 8-byte aligned */
 #define aligned_u64 u_int64_t __attribute__((aligned(8)))
 
-int xtables_check_inverse(const char option[], int *invert,
-	int *my_optind, int argc, char **argv);
 extern struct xtables_globals *xt_params;
 #define xtables_error (xt_params->exit_err)
 
@@ -466,6 +476,14 @@ extern void xtables_save_string(const char *value);
 
 extern const struct xtables_pprot xtables_chain_protos[];
 extern u_int16_t xtables_parse_protocol(const char *s);
+
+/* kernel revision handling */
+extern int kernel_version;
+extern void get_kernel_version(void);
+#define LINUX_VERSION(x,y,z)	(0x10000*(x) + 0x100*(y) + z)
+#define LINUX_VERSION_MAJOR(x)	(((x)>>16) & 0xFF)
+#define LINUX_VERSION_MINOR(x)	(((x)>> 8) & 0xFF)
+#define LINUX_VERSION_PATCH(x)	( (x)      & 0xFF)
 
 /* xtoptions.c */
 extern void xtables_option_metavalidate(const char *,
