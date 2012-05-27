@@ -60,7 +60,7 @@
 #define PACKAGE_NAME "iptables"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "iptables 1.4.13"
+#define PACKAGE_STRING "iptables 1.4.14"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "iptables"
@@ -69,7 +69,7 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "1.4.13"
+#define PACKAGE_VERSION "1.4.14"
 
 /* The size of `struct ip6_hdr', as computed by sizeof. */
 #define SIZEOF_STRUCT_IP6_HDR 40
@@ -78,4 +78,4 @@
 #define STDC_HEADERS 1
 
 /* Version number of package */
-#define VERSION "1.4.13"
+#define VERSION "1.4.14"
